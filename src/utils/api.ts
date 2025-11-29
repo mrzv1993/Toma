@@ -81,7 +81,14 @@ class ApiClient {
 
         // Exponential backoff: 500, 1000, 2000 ms
         const delay = 500 * Math.pow(2, attempt);
-        console.warn(`API Request Failed [${endpoint}]. Retrying in ${delay}ms...`, error);
+        
+        if (attempt === 0 && (error.message === 'Failed to fetch' || error.message.includes('NetworkError') || error.message.includes('Network connection lost'))) {
+             // Less scary log for first failed fetch (common on cold start)
+             console.log(`API [${endpoint}] cold start or network glitch. Retrying in ${delay}ms...`);
+        } else {
+             console.warn(`API Request Failed [${endpoint}]. Retrying in ${delay}ms...`, error);
+        }
+        
         await new Promise(r => setTimeout(r, delay));
       }
     }
@@ -103,10 +110,17 @@ class ApiClient {
     return this.request('/hook-groups');
   }
 
-  async createHookGroup(title: string) {
+  async createHookGroup(title: string, type: 'standard' | 'people' = 'standard') {
     return this.request('/hook-groups', {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, type }),
+    });
+  }
+
+  async updateHookGroup(id: string, updates: any) {
+    return this.request(`/hook-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
     });
   }
 
@@ -121,10 +135,10 @@ class ApiClient {
     return this.request('/hooks');
   }
 
-  async createHook(title: string, groupId?: string) {
+  async createHook(title: string, groupId?: string, personId?: string) {
     return this.request('/hooks', {
       method: 'POST',
-      body: JSON.stringify({ title, groupId }),
+      body: JSON.stringify({ title, groupId, personId }),
     });
   }
 
@@ -141,15 +155,40 @@ class ApiClient {
     });
   }
 
+  // People
+  async getPeople() {
+    return this.request('/people');
+  }
+
+  async createPerson(firstName: string, lastName?: string, avatarUrl?: string, color?: string) {
+    return this.request('/people', {
+      method: 'POST',
+      body: JSON.stringify({ firstName, lastName, avatarUrl, color }),
+    });
+  }
+
+  async updatePerson(id: string, updates: any) {
+    return this.request(`/people/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deletePerson(id: string) {
+    return this.request(`/people/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Categories
   async getCategories() {
     return this.request('/categories');
   }
 
-  async createCategory(title: string) {
+  async createCategory(title: string, type: 'standard' | 'event' = 'standard') {
     return this.request('/categories', {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, type }),
     });
   }
 
@@ -241,6 +280,31 @@ class ApiClient {
 
   async getSprintHistory() {
     return this.request('/sprint/history');
+  }
+
+  async startSprint() {
+    return this.request('/sprint/start', {
+        method: 'POST'
+    });
+  }
+
+  async completeSprint(journalData: {
+    mostImportant?: string;
+    good?: string;
+    better?: string;
+    distractions?: string;
+    insight?: string;
+  }) {
+    return this.request('/sprint/complete', {
+        method: 'POST',
+        body: JSON.stringify({ journal: journalData })
+    });
+  }
+
+  async resetActiveSprintTimes() {
+    return this.request('/admin/reset-active-sprint-times', {
+        method: 'POST'
+    });
   }
 }
 

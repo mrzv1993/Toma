@@ -1,12 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Plus, Inbox, Trash2, Check } from 'lucide-react';
-import { Task } from '../types';
+import { Plus, Inbox, Trash2, Check, Calendar as CalendarIcon, Clock, RefreshCw } from 'lucide-react';
+import { Task, RecurrenceSettings } from '../types';
+import { PersonAvatar } from './people/PersonAvatar';
+import { TaskRecurrenceDialog } from './TaskRecurrenceDialog';
 
-export function InboxColumn() {
+function toLocalISOString(dateString: string) {
+  const date = new Date(dateString);
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: boolean; onToggleCollapse?: () => void }) {
   const { 
     categories, 
     tasks, 
+    people,
     createCategory, 
     deleteCategory, 
     createTask, 
@@ -14,9 +23,11 @@ export function InboxColumn() {
     deleteTask,
     draggedTask,
     setDraggedTask,
-    hooks
+    hooks,
+    activeSprint,
   } = useApp();
   const [newCategoryTitle, setNewCategoryTitle] = useState('');
+  const [newCategoryType, setNewCategoryType] = useState<'standard' | 'event'>('standard');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTaskToCategoryId, setAddingTaskToCategoryId] = useState<string | null>(null);
@@ -24,11 +35,27 @@ export function InboxColumn() {
   const [isSubmittingQuickTask, setIsSubmittingQuickTask] = useState(false);
   const [dropIndicator, setDropIndicator] = useState<{ taskId: string; position: 'top' | 'bottom' } | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [recurrenceTask, setRecurrenceTask] = useState<Task | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const editBackdropRef = useRef<HTMLDivElement>(null);
 
   function handleStartEditingTask(task: Task) {
     setEditingTaskId(task.id);
-    setEditTaskTitle(task.title);
+    let title = task.title;
+    const hook = hooks.find(h => h.id === task.hookId);
+    if (hook) {
+        title += ` #${hook.title}`;
+    }
+    if (task.assignedPeopleIds && task.assignedPeopleIds.length > 0) {
+        task.assignedPeopleIds.forEach(id => {
+            const person = people.find(p => p.id === id);
+            if (person) {
+                title += ` @${person.firstName}`;
+            }
+        });
+    }
+    setEditTaskTitle(title);
   }
 
   async function handleSaveEditingTask() {
@@ -37,7 +64,46 @@ export function InboxColumn() {
         return;
     }
     try {
-        await updateTask(editingTaskId, { title: editTaskTitle });
+        let titleToSave = editTaskTitle;
+        let hookIdToSave: string | undefined;
+        const assignedPeopleIdsToSave: string[] = [];
+
+        // Check for hook tags (e.g. #hookname)
+        const hookTags = editTaskTitle.match(/#[\wа-яА-ЯёЁ]+/g);
+        if (hookTags) {
+            for (const tag of hookTags) {
+                const tagName = tag.substring(1).toLowerCase();
+                const hook = hooks.find(h => h.title.toLowerCase() === tagName);
+                if (hook) {
+                    hookIdToSave = hook.id;
+                    titleToSave = titleToSave.replace(tag, '');
+                    break; // Use the first matching hook
+                }
+            }
+        }
+
+        // Check for person tags (e.g. @name)
+        const personTags = editTaskTitle.match(/@[\wа-яА-ЯёЁ]+/g);
+        if (personTags) {
+            for (const tag of personTags) {
+                const personName = tag.substring(1).toLowerCase();
+                const person = people.find(p => p.firstName.toLowerCase() === personName);
+                if (person) {
+                    if (!assignedPeopleIdsToSave.includes(person.id)) {
+                        assignedPeopleIdsToSave.push(person.id);
+                    }
+                    titleToSave = titleToSave.replace(tag, '');
+                }
+            }
+        }
+
+        titleToSave = titleToSave.replace(/\s{2,}/g, ' ').trim();
+
+        await updateTask(editingTaskId, { 
+            title: titleToSave,
+            ...(hookIdToSave ? { hookId: hookIdToSave } : {}),
+            assignedPeopleIds: assignedPeopleIdsToSave
+        });
         setEditingTaskId(null);
     } catch (error) {
         console.error('Failed to update task', error);
@@ -72,8 +138,6 @@ export function InboxColumn() {
     }
   }
 
-  // ... rest of the code ...
-
   function handleDragStart(task: Task) {
     setDraggedTask(task);
   }
@@ -85,6 +149,9 @@ export function InboxColumn() {
 
   async function handleDrop(categoryId: string) {
     if (!draggedTask) return;
+    
+    // Prevent moving tasks from sprint back to inbox unless preparation mode
+    if (draggedTask.sprintId && activeSprint?.startedAt) return;
 
     try {
       // If dropping into category container (append to end or move from sprint)
@@ -118,6 +185,9 @@ export function InboxColumn() {
     e.stopPropagation();
     
     if (!draggedTask || draggedTask.id === targetTask.id) return;
+
+    // Prevent moving tasks from sprint back to inbox unless preparation mode
+    if (draggedTask.sprintId && activeSprint?.startedAt) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const midpoint = rect.top + rect.height / 2;
@@ -181,8 +251,9 @@ export function InboxColumn() {
     if (!newCategoryTitle.trim()) return;
 
     try {
-      await createCategory(newCategoryTitle);
+      await createCategory(newCategoryTitle, newCategoryType);
       setNewCategoryTitle('');
+      setNewCategoryType('standard');
       setIsAddingCategory(false);
     } catch (error) {
       console.error('Failed to create category:', error);
@@ -221,25 +292,6 @@ export function InboxColumn() {
     }
   }
 
-  function handleDragStart(task: Task) {
-    setDraggedTask(task);
-  }
-
-  function handleDragEnd() {
-    setDraggedTask(null);
-  }
-
-  async function handleDrop(categoryId: string) {
-    if (!draggedTask) return;
-
-    try {
-      await updateTask(draggedTask.id, { categoryId });
-      setDraggedTask(null);
-    } catch (error) {
-      console.error('Failed to move task:', error);
-    }
-  }
-
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
   }
@@ -253,14 +305,33 @@ export function InboxColumn() {
     return `${minutes}м`;
   }
 
+  if (isCollapsed) {
+    return (
+      <div 
+        className="flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] items-center py-4 cursor-pointer hover:bg-[var(--color-surface-hover)] transition-colors"
+        onClick={onToggleCollapse}
+      >
+        <div className="whitespace-nowrap font-medium text-sm text-[var(--color-text-secondary)] select-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+          Входящие
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]">
       {/* Header */}
-      <div className="p-4 border-b border-[var(--color-border)] flex-shrink-0">
+      <div 
+        className="p-4 border-b border-[var(--color-border)] flex-shrink-0 cursor-pointer hover:bg-[var(--color-surface-hover)] transition-colors"
+        onClick={onToggleCollapse}
+      >
         <div className="flex items-center justify-between mb-4">
           <h2>Входящие</h2>
           <button
-            onClick={() => setIsAddingCategory(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsAddingCategory(true);
+            }}
             className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
             title="Добавить категорию"
           >
@@ -268,7 +339,7 @@ export function InboxColumn() {
           </button>
         </div>
 
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mb-4" onClick={(e) => e.stopPropagation()}>
           <input
             type="text"
             value={quickInboxTaskTitle}
@@ -292,7 +363,7 @@ export function InboxColumn() {
         </div>
 
         {isAddingCategory && (
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 mb-2 p-2 bg-[var(--color-background)] rounded border border-[var(--color-border)] shadow-sm" onClick={(e) => e.stopPropagation()}>
             <input
               type="text"
               value={newCategoryTitle}
@@ -300,23 +371,37 @@ export function InboxColumn() {
               onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
               placeholder="Название категории"
               autoFocus
-              className="flex-1 px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]"
+              className="px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
-            <button
-              onClick={handleAddCategory}
-              className="px-3 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded transition-colors"
-            >
-              +
-            </button>
-            <button
-              onClick={() => {
-                setIsAddingCategory(false);
-                setNewCategoryTitle('');
-              }}
-              className="px-3 py-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-            >
-              ✕
-            </button>
+            <div className="flex gap-2 items-center">
+               <span className="text-xs text-[var(--color-text-tertiary)]">Тип:</span>
+               <select 
+                  value={newCategoryType}
+                  onChange={(e) => setNewCategoryType(e.target.value as 'standard' | 'event')}
+                  className="flex-1 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-1 focus:outline-none"
+               >
+                   <option value="standard">Стандартная</option>
+                   <option value="event">Событие</option>
+               </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={handleAddCategory}
+                  className="px-3 py-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded transition-colors text-xs"
+                >
+                  Создать
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAddingCategory(false);
+                    setNewCategoryTitle('');
+                    setNewCategoryType('standard');
+                  }}
+                  className="px-3 py-1 hover:bg-[var(--color-surface-hover)] rounded transition-colors text-xs"
+                >
+                  Отмена
+                </button>
+            </div>
           </div>
         )}
       </div>
@@ -343,6 +428,7 @@ export function InboxColumn() {
                   {/* Category Header */}
                   <div className="flex items-center justify-between p-3 border-b border-[var(--color-border)]">
                     <div className="flex items-center gap-2">
+                      {category.type === 'event' && <CalendarIcon className="w-4 h-4 text-blue-400" />}
                       <h4>{category.id === 'default' ? 'Список задач' : category.title}</h4>
                       <span className="text-[var(--color-text-tertiary)]">
                         ({categoryTasks.length})
@@ -429,20 +515,6 @@ export function InboxColumn() {
                                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-primary)] z-10" />
                               )}
 
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateTask(task.id, { isDone: !task.isDone });
-                                }}
-                                className={`w-5 h-5 rounded-[4px] border ${
-                                  task.isDone 
-                                    ? 'bg-[var(--color-primary)] border-[var(--color-primary)]' 
-                                    : 'border-[var(--color-text-tertiary)] hover:border-[var(--color-text-secondary)]'
-                                } flex items-center justify-center flex-shrink-0 transition-colors`}
-                              >
-                                {task.isDone && <Check className="w-3 h-3 text-white" />}
-                              </button>
-
                               <div 
                                 className="flex-1 min-w-0"
                                 onDoubleClick={(e) => {
@@ -451,27 +523,112 @@ export function InboxColumn() {
                                 }}
                               >
                                 {editingTaskId === task.id ? (
-                                    <input 
-                                        autoFocus
-                                        type="text"
-                                        value={editTaskTitle}
-                                        onChange={e => setEditTaskTitle(e.target.value)}
-                                        onBlur={handleSaveEditingTask}
-                                        onKeyDown={e => {
-                                            if(e.key === 'Enter') handleSaveEditingTask();
-                                            if(e.key === 'Escape') setEditingTaskId(null);
-                                        }}
-                                        className="w-full bg-transparent border-none p-0 focus:ring-0 text-sm"
-                                        onClick={e => e.stopPropagation()}
-                                    />
+                                    <div className="relative w-full grid grid-cols-1">
+                                        <div 
+                                            ref={editBackdropRef}
+                                            className="col-start-1 row-start-1 w-full text-sm whitespace-pre font-normal pointer-events-none overflow-hidden"
+                                            aria-hidden="true"
+                                            style={{ fontFamily: 'inherit' }}
+                                        >
+                                            {editTaskTitle.split(/((?:#|@)[\wа-яА-ЯёЁ]+)/g).map((part, i) => (
+                                                <span key={i} className={part.startsWith('#') ? 'text-blue-400' : part.startsWith('@') ? 'text-green-400' : 'text-[var(--color-text-primary)]'}>
+                                                    {part}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input 
+                                            ref={editInputRef}
+                                            autoFocus
+                                            type="text"
+                                            value={editTaskTitle}
+                                            onChange={e => setEditTaskTitle(e.target.value)}
+                                            onScroll={() => {
+                                                if (editBackdropRef.current && editInputRef.current) {
+                                                    editBackdropRef.current.scrollLeft = editInputRef.current.scrollLeft;
+                                                }
+                                            }}
+                                            onBlur={handleSaveEditingTask}
+                                            onKeyDown={e => {
+                                                if(e.key === 'Enter') handleSaveEditingTask();
+                                                if(e.key === 'Escape') setEditingTaskId(null);
+                                            }}
+                                            className="col-start-1 row-start-1 w-full bg-transparent border-none p-0 focus:ring-0 text-sm relative z-10"
+                                            style={{ color: 'transparent', caretColor: 'var(--color-text-primary)' }}
+                                            onClick={e => e.stopPropagation()}
+                                        />
+                                    </div>
                                 ) : (
-                                    <p className={`text-sm ${task.isDone ? 'line-through text-[var(--color-text-tertiary)]' : 'text-[var(--color-text-primary)]'}`}>
+                                    <p 
+                                      className={`text-sm ${task.isDone ? 'line-through text-[var(--color-text-tertiary)]' : 'text-[var(--color-text-primary)]'}`}
+                                      style={{ 
+                                        opacity: Math.max(0.08, 1 - (Math.max(0, Math.floor((Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60 * 60 * 24))) * 0.01))
+                                      }}
+                                    >
                                         {task.title}
                                     </p>
+                                )}
+                                {category.type === 'event' && (
+                                    <div className="flex flex-wrap items-center gap-1 mt-1" onClick={e => e.stopPropagation()}>
+                                        <input 
+                                            type="datetime-local"
+                                            className="text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:outline-none max-w-[130px]"
+                                            value={task.plannedStartTime ? toLocalISOString(task.plannedStartTime) : ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                // Create date object preserving local time but storing as ISO
+                                                const date = val ? new Date(val).toISOString() : null;
+                                                updateTask(task.id, { plannedStartTime: date });
+                                            }}
+                                            title="Начало события"
+                                        />
+                                        <span className="text-[10px] text-[var(--color-text-tertiary)]">→</span>
+                                        <input 
+                                            type="datetime-local"
+                                            className="text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 text-[var(--color-text-secondary)] focus:border-[var(--color-primary)] focus:outline-none max-w-[130px]"
+                                            value={task.plannedEndTime ? toLocalISOString(task.plannedEndTime) : ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const date = val ? new Date(val).toISOString() : null;
+                                                updateTask(task.id, { plannedEndTime: date });
+                                            }}
+                                            title="Конец события"
+                                        />
+                                        <button
+                                            onClick={() => setRecurrenceTask(task)}
+                                            className={`ml-1 p-1 rounded hover:bg-[var(--color-surface-hover)] transition-colors ${task.recurrence ? 'text-blue-400' : 'text-[var(--color-text-tertiary)]'}`}
+                                            title="Повторять задачу"
+                                        >
+                                            <RefreshCw className="w-3 h-3" />
+                                        </button>
+                                    </div>
                                 )}
                               </div>
 
                               <div className="flex items-center gap-3 text-xs text-[var(--color-text-tertiary)] flex-shrink-0">
+                                {/* People */}
+                                <div className="flex items-center">
+                                    <div className="flex -space-x-1.5 hover:space-x-0.5 transition-all mr-1">
+                                        {(task.assignedPeopleIds || [])
+                                            .map(id => people.find(p => p.id === id))
+                                            .filter(Boolean)
+                                            .slice(0, 3)
+                                            .map((person) => (
+                                                <PersonAvatar 
+                                                    key={person!.id} 
+                                                    person={person!} 
+                                                    size="sm" 
+                                                    className="w-5 h-5 border border-[var(--color-background)]" 
+                                                />
+                                            ))
+                                        }
+                                        {(task.assignedPeopleIds?.length || 0) > 3 && (
+                                            <div className="w-5 h-5 rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-background)] flex items-center justify-center text-[9px] text-[var(--color-text-secondary)]">
+                                                +{(task.assignedPeopleIds?.length || 0) - 3}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
                                 {task.priorityLevel && (
                                   <div className="px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium">
                                     {task.priorityLevel}
@@ -507,6 +664,17 @@ export function InboxColumn() {
           </div>
         )}
       </div>
+
+      {recurrenceTask && (
+        <TaskRecurrenceDialog 
+          task={recurrenceTask}
+          isOpen={true}
+          onClose={() => setRecurrenceTask(null)}
+          onSave={(recurrence) => {
+             updateTask(recurrenceTask.id, { recurrence });
+          }}
+        />
+      )}
     </div>
   );
 }

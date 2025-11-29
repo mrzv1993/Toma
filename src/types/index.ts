@@ -9,6 +9,7 @@ export interface User {
 export interface HookGroup {
   id: string;
   title: string;
+  type?: 'standard' | 'people';
   userId: string;
   createdAt: string;
 }
@@ -17,10 +18,22 @@ export interface Hook {
   id: string;
   title: string;
   groupId: string;
+  personId?: string;
   userId: string;
   taskCount: number;
   createdAt: string;
   position?: number;
+}
+
+export interface Person {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName?: string | null;
+  avatarUrl?: string | null;
+  color?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Task Types
@@ -37,6 +50,33 @@ export interface Task {
   userId: string;
   createdAt: string;
   updatedAt: string;
+  assignedPeopleIds?: string[];
+  archivedTime?: number; // Total time spent in previous sprints
+  minRequiredTime?: number | null; // in minutes
+  maxAllowedTime?: number | null; // in minutes
+  plannedStartTime?: string | null; // ISO string
+  plannedEndTime?: string | null; // ISO string
+  recurrence?: RecurrenceSettings | null;
+  description?: string | null;
+  subtasks?: Subtask[];
+}
+
+export interface Subtask {
+  id: string;
+  title: string;
+  isDone: boolean;
+}
+
+export interface RecurrenceSettings {
+  type: 'after_completion' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  onlyWhenPreviousDone: boolean;
+  startTime?: string | null;
+  endTime?: string | null;
+  startDate: string; // ISO date string
+  endDateMode: 'never' | 'after' | 'date';
+  endAfterOccurrences?: number | null;
+  endDate?: string | null; // ISO date string
 }
 
 export interface TaskHistoryEntry {
@@ -53,6 +93,7 @@ export interface TaskWithHistory extends Task {
 export interface Category {
   id: string;
   title: string;
+  type?: 'standard' | 'event';
   userId: string;
   order: number;
   createdAt: string;
@@ -67,7 +108,9 @@ export interface Sprint {
   completedAt: string | null;
   totalTime: number; // in seconds
   isCompleted: boolean;
-  tasks: SprintTask[];
+  startedAt?: string | null; // Preparation mode if null
+  tasks: Task[]; // Changed from SprintTask[] to Task[] because in server/index.tsx we attach actual Task objects
+  journal?: SprintJournal;
 }
 
 export interface SprintTask {
@@ -109,6 +152,19 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// Sprint Journal
+export interface SprintJournal {
+  id: string;
+  userId: string;
+  sprintId: string;
+  mostImportant?: string;
+  good?: string;
+  better?: string;
+  distractions?: string;
+  insight?: string;
+  createdAt: string;
 }
 
 // Drag and Drop Types

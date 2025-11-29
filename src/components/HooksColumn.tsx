@@ -1,26 +1,54 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
-import { Plus, Hash, Trash2, Folder, X, ChevronRight, ChevronDown } from 'lucide-react';
-import { Hook } from '../types';
+import { Plus, Hash, Trash2, Folder, X, ChevronRight, ChevronDown, User, Settings } from 'lucide-react';
+import { Hook, Person } from '../types';
+import { PersonAvatar } from './people/PersonAvatar';
 
-export function HooksColumn() {
+const AVATAR_COLORS = [
+  '#EF4444', // Red
+  '#F97316', // Orange
+  '#F59E0B', // Amber
+  '#10B981', // Emerald
+  '#3B82F6', // Blue
+  '#6366F1', // Indigo
+  '#8B5CF6', // Violet
+  '#EC4899', // Pink
+];
+
+const formatTime = (seconds: number) => {
+  if (!seconds) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}ч ${m}м`;
+  return `${m}м`;
+};
+
+export function HooksColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: boolean; onToggleCollapse?: () => void }) {
   const { 
     hooks, 
     hookGroups,
     tasks, 
+    people,
     createHook, 
     updateHook, 
     deleteHook, 
     createTask,
     createHookGroup,
-    deleteHookGroup
+    updateHookGroup,
+    deleteHookGroup,
+    createPerson,
+    updatePerson
   } = useApp();
 
   // State
   const [isAddingGroup, setIsAddingGroup] = useState(false);
   const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [newGroupType, setNewGroupType] = useState<'standard' | 'people'>('standard');
   const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editGroupTitle, setEditGroupTitle] = useState('');
+  const [editGroupType, setEditGroupType] = useState<'standard' | 'people'>('standard');
   
   const [addingHookToGroup, setAddingHookToGroup] = useState<string | null>(null);
   const [newHookTitle, setNewHookTitle] = useState('');
@@ -43,10 +71,6 @@ export function HooksColumn() {
   // Helper to get sort key for hooks
   const getHookSortKey = (hook: any) => {
     if (hook.position !== undefined && hook.position !== null) return hook.position;
-    // Default: newest first (descending createdAt). 
-    // We map this so smaller value = top.
-    // Date.now() is large. -Date.now() is small (negative).
-    // So newest (large date) -> small negative number -> Top.
     return -new Date(hook.createdAt).getTime();
   };
 
@@ -54,6 +78,9 @@ export function HooksColumn() {
   const hooksWithCount = useMemo(() => hooks.map((hook) => ({
     ...hook,
     taskCount: tasks.filter((task) => task.hookId === hook.id).length,
+    totalSpentTime: tasks
+      .filter((task) => task.hookId === hook.id)
+      .reduce((sum, task) => sum + (task.spentTime || 0), 0)
   })), [hooks, tasks]);
 
   const groupedHooks = useMemo(() => {
@@ -80,8 +107,9 @@ export function HooksColumn() {
     
     setIsSubmittingGroup(true);
     try {
-      await createHookGroup(newGroupTitle);
+      await createHookGroup(newGroupTitle, newGroupType);
       setNewGroupTitle('');
+      setNewGroupType('standard');
       setIsAddingGroup(false);
     } catch (error) {
       console.error('Failed to create group:', error);
@@ -99,22 +127,66 @@ export function HooksColumn() {
     }
   }
 
+  async function handleUpdateGroup() {
+    if (!editingGroupId || !editGroupTitle.trim()) return;
+    try {
+      await updateHookGroup(editingGroupId, { 
+        title: editGroupTitle,
+        type: editGroupType
+      });
+      setEditingGroupId(null);
+      setEditGroupTitle('');
+    } catch (error) {
+      console.error('Failed to update group:', error);
+    }
+  }
+
   async function handleAddHook() {
     if (!newHookTitle.trim() || !addingHookToGroup) return;
     
     const title = newHookTitle;
     const groupId = addingHookToGroup === 'default' ? undefined : addingHookToGroup;
+    const group = hookGroups.find(g => g.id === groupId);
     
     setNewHookTitle('');
-    
-    createHook(title, groupId).catch((error) => {
+    setIsSubmittingHook(true);
+
+    try {
+      if (group?.type === 'people') {
+        // Create person first
+        const parts = title.split(' ');
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ');
+        
+        // Assign color from palette
+        const color = AVATAR_COLORS[people.length % AVATAR_COLORS.length];
+        
+        const person = await createPerson(firstName, lastName, '', color);
+        if (person) {
+            await createHook(title, groupId, person.id);
+        }
+      } else {
+        await createHook(title, groupId);
+      }
+    } catch (error) {
       console.error('Failed to create hook:', error);
-    });
+    } finally {
+      setIsSubmittingHook(false);
+    }
   }
 
   async function handleUpdateHook(id: string) {
     if (!editTitle.trim()) return;
     try {
+        // Update person name if this is a person hook
+        const hook = hooks.find(h => h.id === id);
+        if (hook?.personId) {
+            const parts = editTitle.trim().split(' ');
+            const firstName = parts[0];
+            const lastName = parts.slice(1).join(' ');
+            await updatePerson(hook.personId, { firstName, lastName });
+        }
+
       await updateHook(id, { title: editTitle });
       setEditingHookId(null);
       setEditTitle('');
@@ -232,12 +304,8 @@ export function HooksColumn() {
       e.preventDefault();
       if (!draggedHook) return;
       
-      // If dropping on the same group without hitting a specific item (dropped on header or empty space)
-      // we append to the end.
-      // If we are already in this group, and no indicator, just return (no change).
       if (draggedHook.groupId === groupId && !dropIndicator) return;
       
-      // Append to end
       const groupHooks = hooksWithCount
         .filter(h => h.groupId === groupId)
         .sort((a, b) => getHookSortKey(a) - getHookSortKey(b));
@@ -262,13 +330,29 @@ export function HooksColumn() {
     .filter((t) => t.hookId === selectedHookId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  if (isCollapsed) {
+    return (
+      <div 
+        className="flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] items-center py-4 cursor-pointer hover:bg-[var(--color-surface-hover)] transition-colors"
+        onClick={onToggleCollapse}
+      >
+        <div className="whitespace-nowrap font-medium text-sm text-[var(--color-text-secondary)] select-none" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+          Крючки
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] relative">
       {/* Header */}
-      <div className="p-4 border-b border-[var(--color-border)] flex-shrink-0">
+      <div 
+        className="p-4 border-b border-[var(--color-border)] flex-shrink-0 cursor-pointer hover:bg-[var(--color-surface-hover)] transition-colors"
+        onClick={onToggleCollapse}
+      >
         <div className="flex items-center justify-between mb-4">
           <h2>Крючки</h2>
-          <div className="flex gap-2">
+          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => setIsAddingGroup(true)}
               className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
@@ -280,7 +364,7 @@ export function HooksColumn() {
         </div>
 
         {isAddingGroup && (
-          <div className="flex gap-2 mb-2">
+          <div className="flex flex-col gap-2 mb-2 p-2 bg-[var(--color-background)] rounded border border-[var(--color-border)] shadow-sm" onClick={(e) => e.stopPropagation()}>
             <input
               type="text"
               value={newGroupTitle}
@@ -293,21 +377,34 @@ export function HooksColumn() {
               }}
               placeholder="Название группы"
               autoFocus
-              className="flex-1 px-3 py-2 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
+              className="px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-primary)]"
             />
-            <button
-              onClick={handleAddGroup}
-              disabled={isSubmittingGroup}
-              className="px-3 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded transition-colors disabled:opacity-50"
-            >
-              ✓
-            </button>
-            <button
-              onClick={() => setIsAddingGroup(false)}
-              className="px-3 py-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-            >
-              ✕
-            </button>
+            <div className="flex gap-2 items-center">
+               <span className="text-xs text-[var(--color-text-tertiary)]">Тип:</span>
+               <select 
+                  value={newGroupType}
+                  onChange={(e) => setNewGroupType(e.target.value as 'standard' | 'people')}
+                  className="flex-1 text-sm bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-1 focus:outline-none"
+               >
+                   <option value="standard">Стандартная</option>
+                   <option value="people">Люди</option>
+               </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={handleAddGroup}
+                  disabled={isSubmittingGroup}
+                  className="px-3 py-1 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded transition-colors disabled:opacity-50 text-xs"
+                >
+                  Создать
+                </button>
+                <button
+                  onClick={() => setIsAddingGroup(false)}
+                  className="px-3 py-1 hover:bg-[var(--color-surface-hover)] rounded transition-colors text-xs"
+                >
+                  Отмена
+                </button>
+            </div>
           </div>
         )}
       </div>
@@ -317,45 +414,94 @@ export function HooksColumn() {
         {/* Groups */}
         {hookGroups.map(group => {
             const isCollapsed = collapsedGroups.has(group.id);
+            const isPeopleGroup = group.type === 'people';
+            
             return (
                 <div 
                     key={group.id} 
                     className="space-y-2"
                     onDragOver={(e) => {
                         e.preventDefault();
-                        // Allow drop on group container
                     }}
                     onDrop={(e) => {
-                        // If drop target is exactly the group container or header (not handled by HookItem)
-                        // We can check this, but event bubbling means HookItem drop handles it first.
-                        // We use stopPropagation in HookItem drop.
                         handleGroupDrop(e, group.id);
                     }}
                 >
-                    <div className="flex items-center justify-between group/header sticky top-0 z-10 bg-[var(--color-surface)] py-2 -mt-2 mb-2">
-                        <div 
-                            className="flex items-center gap-2 cursor-pointer text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                            onClick={() => toggleGroupCollapse(group.id)}
-                        >
-                            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                            <span className="font-medium text-sm">{group.title}</span>
-                        </div>
-                        <div className="flex gap-1 opacity-0 group-hover/header:opacity-100 transition-opacity">
-                            <button
-                                onClick={() => setAddingHookToGroup(group.id)}
-                                className="p-1 hover:bg-[var(--color-surface-hover)] rounded"
-                                title="Добавить крючок в группу"
-                            >
-                                <Plus className="w-3 h-3" />
-                            </button>
-                            <button
-                                onClick={() => handleDeleteGroup(group.id)}
-                                className="p-1 hover:bg-red-500/10 rounded text-red-500"
-                                title="Удалить группу"
-                            >
-                                <Trash2 className="w-3 h-3" />
-                            </button>
-                        </div>
+                    <div className="flex items-center justify-between group/header sticky top-0 z-10 bg-[var(--color-surface)] py-2 -mt-2 mb-2 min-h-[32px]">
+                        {editingGroupId === group.id ? (
+                            <div className="flex gap-2 flex-1 items-center" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                    type="text"
+                                    value={editGroupTitle}
+                                    onChange={(e) => setEditGroupTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleUpdateGroup();
+                                        if (e.key === 'Escape') setEditingGroupId(null);
+                                    }}
+                                    autoFocus
+                                    className="flex-1 px-2 py-1 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)] min-w-0"
+                                    placeholder="Название группы"
+                                />
+                                <select 
+                                    value={editGroupType}
+                                    onChange={(e) => setEditGroupType(e.target.value as 'standard' | 'people')}
+                                    className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded p-1 focus:outline-none w-[100px]"
+                                >
+                                    <option value="standard">Обычная</option>
+                                    <option value="people">Люди</option>
+                                </select>
+                                <button
+                                    onClick={handleUpdateGroup}
+                                    className="px-2 py-1 bg-[var(--color-primary)] text-white rounded text-xs flex-shrink-0"
+                                >
+                                    ✓
+                                </button>
+                                <button
+                                    onClick={() => setEditingGroupId(null)}
+                                    className="px-2 py-1 hover:bg-[var(--color-surface-hover)] rounded text-xs flex-shrink-0"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <div 
+                                    className="flex items-center gap-2 cursor-pointer text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] flex-1 min-w-0"
+                                    onClick={() => toggleGroupCollapse(group.id)}
+                                >
+                                    {isCollapsed ? <ChevronRight className="w-4 h-4 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 flex-shrink-0" />}
+                                    <span className="font-medium text-sm truncate">{group.title}</span>
+                                    {isPeopleGroup && <User className="w-3 h-3 text-[var(--color-text-tertiary)] flex-shrink-0" />}
+                                </div>
+                                <div className="flex gap-1 opacity-0 group-hover/header:opacity-100 transition-opacity">
+                                    <button
+                                        onClick={() => {
+                                            setEditingGroupId(group.id);
+                                            setEditGroupTitle(group.title);
+                                            setEditGroupType(group.type);
+                                        }}
+                                        className="p-1 hover:bg-[var(--color-surface-hover)] rounded text-[var(--color-text-secondary)]"
+                                        title="Настройки группы"
+                                    >
+                                        <Settings className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                        onClick={() => setAddingHookToGroup(group.id)}
+                                        className="p-1 hover:bg-[var(--color-surface-hover)] rounded"
+                                        title={isPeopleGroup ? "Добавить человека" : "Добавить крючок в группу"}
+                                    >
+                                        <Plus className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteGroup(group.id)}
+                                        className="p-1 hover:bg-red-500/10 rounded text-red-500"
+                                        title="Удалить группу"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {!isCollapsed && (
@@ -372,7 +518,7 @@ export function HooksColumn() {
                                             handleAddHook();
                                           }
                                         }}
-                                        placeholder="Название крючка"
+                                        placeholder={isPeopleGroup ? "Имя человека" : "Название крючка"}
                                         autoFocus
                                         className="flex-1 px-2 py-1 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]"
                                     />
@@ -396,6 +542,8 @@ export function HooksColumn() {
                                 <HookItem
                                     key={hook.id}
                                     hook={hook}
+                                    people={people}
+                                    isPeopleGroup={isPeopleGroup}
                                     selectedHookId={selectedHookId}
                                     editingHookId={editingHookId}
                                     editTitle={editTitle}
@@ -417,7 +565,7 @@ export function HooksColumn() {
                             ))}
                             {(!groupedHooks.groups[group.id] || groupedHooks.groups[group.id].length === 0) && !addingHookToGroup && (
                                 <div className="text-xs text-[var(--color-text-tertiary)] px-2 py-1">
-                                    Нет крючков
+                                    {isPeopleGroup ? "Нет людей" : "Нет крючков"}
                                 </div>
                             )}
                         </div>
@@ -425,8 +573,6 @@ export function HooksColumn() {
                 </div>
             );
         })}
-
-
       </div>
 
       {/* Hook Details Modal (Portal) */}
@@ -440,7 +586,7 @@ export function HooksColumn() {
              <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] shrink-0">
                 <div className="flex items-center gap-3 overflow-hidden">
                     <div className="p-2 bg-[var(--color-primary)]/10 rounded text-[var(--color-primary)] shrink-0">
-                        <Hash className="w-5 h-5" />
+                        {selectedHook.personId ? <User className="w-5 h-5" /> : <Hash className="w-5 h-5" />}
                     </div>
                     <div className="min-w-0">
                         <h3 className="text-lg font-medium break-words leading-tight">{selectedHook.title}</h3>
@@ -536,6 +682,8 @@ export function HooksColumn() {
 // Helper Component for Hook Item
 function HookItem({ 
   hook, 
+  people,
+  isPeopleGroup,
   selectedHookId, 
   editingHookId, 
   editTitle, 
@@ -549,8 +697,10 @@ function HookItem({
   onDragStart,
   onDragOver,
   onDrop,
-  onDragEnd
+  onDragEnd,
 }: any) {
+  const person = isPeopleGroup && hook.personId ? people.find((p: Person) => p.id === hook.personId) : null;
+
   return (
     <div
       className={`group relative p-3 rounded border cursor-pointer transition-all ${
@@ -597,35 +747,46 @@ function HookItem({
       ) : (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Hash className="w-4 h-4 text-[var(--color-primary)] flex-shrink-0" />
-            <span className="truncate text-sm">{hook.title}</span>
-            {hook.taskCount > 0 && (
-                <span className="text-xs bg-[var(--color-surface-hover)] px-1.5 py-0.5 rounded text-[var(--color-text-secondary)]">
-                    {hook.taskCount}
+            {isPeopleGroup && person ? (
+                <div className="flex-shrink-0">
+                     <PersonAvatar person={person} size="sm" showTooltip={false} />
+                </div>
+            ) : (
+                <span className="text-xs text-[var(--color-text-tertiary)] w-5 text-center flex-shrink-0">
+                    {hook.taskCount > 0 ? hook.taskCount : ''}
                 </span>
             )}
+            <span className="truncate text-sm">{hook.title}</span>
           </div>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onEditStart(hook.id, hook.title);
-              }}
-              className="p-1 hover:bg-[var(--color-surface-hover)] rounded text-[var(--color-text-secondary)]"
-              title="Редактировать"
-            >
-              <span className="text-xs">✎</span>
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(hook.id);
-              }}
-              className="p-1 hover:bg-red-500/10 rounded text-red-500"
-              title="Удалить"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
+          
+          <div className="flex items-center">
+            {hook.totalSpentTime > 0 && (
+              <span className="text-xs text-[var(--color-text-tertiary)] mr-2">
+                {formatTime(hook.totalSpentTime)}
+              </span>
+            )}
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditStart(hook.id, hook.title);
+                }}
+                className="p-1 hover:bg-[var(--color-surface-hover)] rounded text-[var(--color-text-secondary)]"
+                title="Редактировать"
+              >
+                <span className="text-xs">✎</span>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(hook.id);
+                }}
+                className="p-1 hover:bg-red-500/10 rounded text-red-500"
+                title="Удалить"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
       )}

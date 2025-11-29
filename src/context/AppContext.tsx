@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { createClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { api } from '../utils/api';
-import { Task, Hook, Category, Sprint, TimerState, HookGroup } from '../types';
+import { Task, Hook, Category, Sprint, TimerState, HookGroup, Person } from '../types';
 
 interface AppContextType {
   // Auth
@@ -18,19 +18,24 @@ interface AppContextType {
   hookGroups: HookGroup[];
   categories: Category[];
   tasks: Task[];
+  people: Person[];
   activeSprint: Sprint | null;
   sprintHistory: Sprint[];
   timer: TimerState;
 
   // Actions
   refreshData: () => Promise<void>;
-  createHook: (title: string, groupId?: string) => Promise<void>;
+  createHook: (title: string, groupId?: string, personId?: string) => Promise<void>;
   updateHook: (id: string, updates: any) => Promise<void>;
   deleteHook: (id: string) => Promise<void>;
-  createHookGroup: (title: string) => Promise<void>;
+  createHookGroup: (title: string, type?: 'standard' | 'people') => Promise<void>;
+  updateHookGroup: (id: string, updates: any) => Promise<void>;
   deleteHookGroup: (id: string) => Promise<void>;
-  createCategory: (title: string) => Promise<void>;
+  createCategory: (title: string, type?: 'standard' | 'event') => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  createPerson: (firstName: string, lastName?: string, avatarUrl?: string, color?: string) => Promise<Person | undefined>;
+  updatePerson: (id: string, updates: any) => Promise<void>;
+  deletePerson: (id: string) => Promise<void>;
   createTask: (title: string, hookId?: string | null, categoryId?: string) => Promise<void>;
   updateTask: (id: string, updates: any) => Promise<void>;
   moveTaskToSprint: (id: string, priorityLevel: number) => Promise<void>;
@@ -40,6 +45,8 @@ interface AppContextType {
   startTimer: (taskId: string) => Promise<void>;
   pauseTimer: (elapsedTime: number) => Promise<void>;
   stopTimer: (elapsedTime: number) => Promise<void>;
+  startSprint: () => Promise<void>;
+  completeSprint: (journalData: any) => Promise<void>;
 
   // UI State
   viewMode: 'current' | 'history';
@@ -48,6 +55,8 @@ interface AppContextType {
   setSelectedHistorySprint: (sprint: Sprint | null) => void;
   draggedTask: Task | null;
   setDraggedTask: (task: Task | null) => void;
+  selectedTask: Task | null;
+  setSelectedTask: (task: Task | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -65,6 +74,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [hookGroups, setHookGroups] = useState<HookGroup[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [sprintHistory, setSprintHistory] = useState<Sprint[]>([]);
@@ -78,6 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [viewMode, setViewMode] = useState<'current' | 'history'>('current');
   const [selectedHistorySprint, setSelectedHistorySprint] = useState<Sprint | null>(null);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Check for existing session and subscribe to auth changes
   useEffect(() => {
@@ -182,6 +193,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setHooks([]);
       setHookGroups([]);
       setCategories([]);
+      setPeople([]);
       setTasks([]);
       setActiveSprint(null);
       setSprintHistory([]);
@@ -198,51 +210,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   async function refreshData() {
+    // Ensure API has the current token
+    if (accessToken) {
+      api.setAccessToken(accessToken);
+    }
+
     try {
-      const results = await Promise.allSettled([
-        api.getHooks(),
-        api.getHookGroups(),
-        api.getCategories(),
-        api.getTasks(),
-        api.getActiveSprint(),
-        api.getSprintHistory(),
-        api.getTimer(),
-      ]);
+      // Execute requests sequentially to avoid network limits and "Network connection lost" errors
+      // We use a helper to handle errors gracefully for each request
+      const ERROR_SYMBOL = Symbol('error');
+      const fetchSafe = async <T,>(promise: Promise<{ success: boolean, data: T }>): Promise<T | typeof ERROR_SYMBOL> => {
+        try {
+          const res = await promise;
+          return res.success ? res.data : ERROR_SYMBOL;
+        } catch (e: any) {
+          if (e.message === 'Unauthorized' || (e.message && e.message.includes('Unauthorized'))) {
+             console.error('Refresh failed with Unauthorized. Signing out...');
+             signOut(); // Force sign out to clear invalid session
+             throw e; // Stop refresh chain
+          }
+          console.warn('Partial refresh failed:', e);
+          return ERROR_SYMBOL;
+        }
+      };
 
-      const [hooksRes, hookGroupsRes, categoriesRes, tasksRes, sprintRes, historyRes, timerRes] = results;
+      // 1. Tasks (Most critical)
+      const tasksData = await fetchSafe(api.getTasks());
+      if (tasksData !== ERROR_SYMBOL) setTasks(tasksData as Task[]);
 
-      if (hooksRes.status === 'fulfilled') setHooks(hooksRes.value.data || []);
-      if (hookGroupsRes.status === 'fulfilled') setHookGroups(hookGroupsRes.value.data || []);
-      if (categoriesRes.status === 'fulfilled') setCategories(categoriesRes.value.data || []);
-      if (tasksRes.status === 'fulfilled') setTasks(tasksRes.value.data || []);
-      if (sprintRes.status === 'fulfilled') setActiveSprint(sprintRes.value.data || null);
+      // 2. Categories
+      const categoriesData = await fetchSafe(api.getCategories());
+      if (categoriesData !== ERROR_SYMBOL) setCategories(categoriesData as Category[]);
+
+      // 2.1 People
+      const peopleData = await fetchSafe(api.getPeople());
+      if (peopleData !== ERROR_SYMBOL) setPeople(peopleData as Person[]);
+
+      // 3. Hooks & Groups
+      const hookGroupsData = await fetchSafe(api.getHookGroups());
+      if (hookGroupsData !== ERROR_SYMBOL) setHookGroups(hookGroupsData as HookGroup[]);
       
-      if (historyRes.status === 'fulfilled') {
-        setSprintHistory(historyRes.value.data || []);
-      } else {
-        console.error('Refresh data warning: Failed to fetch sprint history');
-      }
+      const hooksData = await fetchSafe(api.getHooks());
+      if (hooksData !== ERROR_SYMBOL) setHooks(hooksData as Hook[]);
 
-      if (timerRes.status === 'fulfilled') {
-        setTimer(timerRes.value.data || {
-            taskId: null,
-            isRunning: false,
-            startedAt: null,
-            elapsedTime: 0,
-        });
-      }
+      // 4. Sprint & History
+      const activeSprintData = await fetchSafe(api.getActiveSprint());
+      if (activeSprintData !== ERROR_SYMBOL) setActiveSprint(activeSprintData as Sprint | null);
+
+      const historyData = await fetchSafe(api.getSprintHistory());
+      if (historyData !== ERROR_SYMBOL) setSprintHistory(historyData as Sprint[]);
+
+      // 5. Timer
+      const timerData = await fetchSafe(api.getTimer());
+      if (timerData !== ERROR_SYMBOL) setTimer(timerData as TimerState);
+
     } catch (error) {
       console.error('Refresh data fatal error:', error);
     }
   }
 
-  async function createHook(title: string, groupId?: string) {
+  async function createHook(title: string, groupId?: string, personId?: string) {
     // Optimistic update
     const tempId = `temp-hook-${Date.now()}`;
     const tempHook: Hook = {
       id: tempId,
       title,
       groupId: groupId || 'default',
+      personId,
       userId: user?.id || 'temp',
       taskCount: 0,
       createdAt: new Date().toISOString(),
@@ -250,7 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHooks((prev) => [tempHook, ...prev]);
 
     try {
-      const res = await api.createHook(title, groupId);
+      const res = await api.createHook(title, groupId, personId);
       if (res && res.success && res.data) {
         setHooks((prev) => prev.map((h) => (h.id === tempId ? res.data : h)));
       } else {
@@ -290,12 +324,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function createHookGroup(title: string) {
+  async function createHookGroup(title: string, type: 'standard' | 'people' = 'standard') {
     try {
-      await api.createHookGroup(title);
+      await api.createHookGroup(title, type);
       await refreshData();
     } catch (error) {
       console.error('Create hook group error:', error);
+      throw error;
+    }
+  }
+
+  async function updateHookGroup(id: string, updates: any) {
+    try {
+      setHookGroups((prev) => prev.map((g) => 
+        g.id === id ? { ...g, ...updates } : g
+      ));
+      await api.updateHookGroup(id, updates);
+      await refreshData();
+    } catch (error) {
+      console.error('Update hook group error:', error);
+      await refreshData();
       throw error;
     }
   }
@@ -310,9 +358,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function createCategory(title: string) {
+  async function createCategory(title: string, type: 'standard' | 'event' = 'standard') {
     try {
-      await api.createCategory(title);
+      await api.createCategory(title, type);
       await refreshData();
     } catch (error) {
       console.error('Create category error:', error);
@@ -326,6 +374,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshData();
     } catch (error) {
       console.error('Delete category error:', error);
+      throw error;
+    }
+  }
+
+  async function createPerson(firstName: string, lastName?: string, avatarUrl?: string, color?: string) {
+    const tempId = `temp-person-${Date.now()}`;
+    const tempPerson: Person = {
+      id: tempId,
+      userId: user?.id || 'temp',
+      firstName,
+      lastName,
+      avatarUrl,
+      color,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setPeople(prev => [...prev, tempPerson]);
+
+    try {
+      const res = await api.createPerson(firstName, lastName, avatarUrl, color);
+      if (res && res.success && res.data) {
+        setPeople(prev => prev.map(p => p.id === tempId ? res.data : p));
+        return res.data;
+      } else {
+        await refreshData();
+        // Attempt to find the person if not returned directly (fallback)
+        const latestPeople = await api.getPeople();
+        if (latestPeople.success && latestPeople.data) {
+             // Heuristic: find newest person with matching name? risky.
+             // Ideally API always returns data.
+             return latestPeople.data.find((p: Person) => p.firstName === firstName && p.lastName === lastName); 
+        }
+      }
+    } catch (error) {
+      console.error('Create person error:', error);
+      setPeople(prev => prev.filter(p => p.id !== tempId));
+      throw error;
+    }
+  }
+
+  async function updatePerson(id: string, updates: any) {
+    const originalPerson = people.find(p => p.id === id);
+    if (!originalPerson) return;
+
+    setPeople(prev => prev.map(p => 
+      p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
+    ));
+
+    try {
+      const res = await api.updatePerson(id, updates);
+      if (res && res.success && res.data) {
+        setPeople(prev => prev.map(p => p.id === id ? res.data : p));
+      }
+    } catch (error) {
+      console.error('Update person error:', error);
+      setPeople(prev => prev.map(p => p.id === id ? originalPerson : p));
+      throw error;
+    }
+  }
+
+  async function deletePerson(id: string) {
+    const originalPerson = people.find(p => p.id === id);
+    if (!originalPerson) return;
+
+    setPeople(prev => prev.filter(p => p.id !== id));
+
+    // Also remove from local tasks state
+    setTasks(prev => prev.map(t => {
+        if (t.assignedPeopleIds?.includes(id)) {
+            return { ...t, assignedPeopleIds: t.assignedPeopleIds.filter(pid => pid !== id) };
+        }
+        return t;
+    }));
+
+    try {
+      await api.deletePerson(id);
+    } catch (error) {
+      console.error('Delete person error:', error);
+      setPeople(prev => [...prev, originalPerson]);
+      await refreshData(); // To restore task assignments
       throw error;
     }
   }
@@ -558,6 +686,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         elapsedTime
     }));
 
+    if (timer.taskId) {
+      setTasks(prev => prev.map(t => t.id === timer.taskId ? { ...t, spentTime: elapsedTime } : t));
+    }
+
     try {
       await api.pauseTimer(elapsedTime);
       
@@ -581,6 +713,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         elapsedTime: 0
     });
 
+    if (previousTimer.taskId) {
+      setTasks(prev => prev.map(t => t.id === previousTimer.taskId ? { ...t, spentTime: elapsedTime } : t));
+    }
+
     try {
       await api.stopTimer(elapsedTime);
       
@@ -589,6 +725,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Stop timer error:', error);
       setTimer(previousTimer);
+      throw error;
+    }
+  }
+
+  async function startSprint() {
+    try {
+      await api.startSprint();
+      await refreshData();
+    } catch (error: any) {
+      // If sprint is already started, just refresh data and consider it a success
+      if (error.message && error.message.includes('Sprint already started')) {
+        await refreshData();
+        return;
+      }
+      console.error('Start sprint error:', error);
+      throw error;
+    }
+  }
+
+  async function completeSprint(journalData: any) {
+    try {
+      await api.completeSprint(journalData);
+      await refreshData();
+    } catch (error) {
+      console.error('Complete sprint error:', error);
       throw error;
     }
   }
@@ -604,6 +765,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     hookGroups,
     categories,
     tasks,
+    people,
     activeSprint,
     sprintHistory,
     timer,
@@ -612,9 +774,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateHook,
     deleteHook,
     createHookGroup,
+    updateHookGroup,
     deleteHookGroup,
     createCategory,
     deleteCategory,
+    createPerson,
+    updatePerson,
+    deletePerson,
     createTask,
     updateTask,
     moveTaskToSprint,
@@ -624,12 +790,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startTimer,
     pauseTimer,
     stopTimer,
+    startSprint,
+    completeSprint,
     viewMode,
     setViewMode,
     selectedHistorySprint,
     setSelectedHistorySprint,
     draggedTask,
     setDraggedTask,
+    selectedTask,
+    setSelectedTask,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
