@@ -25,6 +25,7 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
     setDraggedTask,
     hooks,
     activeSprint,
+    refreshData,
   } = useApp();
   const [newCategoryTitle, setNewCategoryTitle] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<'standard' | 'event'>('standard');
@@ -327,16 +328,28 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
       >
         <div className="flex items-center justify-between mb-4">
           <h2>Входящие</h2>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsAddingCategory(true);
-            }}
-            className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-            title="Добавить категорию"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                refreshData();
+              }}
+              className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+              title="Обновить"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAddingCategory(true);
+              }}
+              className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+              title="Добавить категорию"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="flex gap-2 mb-4" onClick={(e) => e.stopPropagation()}>

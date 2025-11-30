@@ -1,61 +1,245 @@
-**Add your own guidelines here**
-<!--
+# Toma — Project Guidelines
 
-System Guidelines
+---
 
-Use this file to provide the AI with rules and guidelines you want it to follow.
-This template outlines a few examples of things you can add. You can add your own sections and format it to suit your needs
+# 1. Общие принципы
+- Пиши максимально **чистый**, **читаемый** и **минималистичный** код.
+- Строго следуй **архитектуре слоёв** (UI → Hooks → State → Services → Data).
+- Никакой бизнес-логики в компонентах.
+- Никаких inline-стилей (кроме очень редких ситуаций).
+- Никаких `any`, `@ts-ignore`, `as unknown`.
+- Используй строгую типизацию, все данные должны иметь интерфейсы/типы.
+- Код должен быть предсказуемым и легко модифицируемым.
+- Каждый компонент — одна ответственность.
+- Каждый сервис — одна доменная область.
+- Пиши так, будто код будут читать спустя год.
 
-TIP: More context isn't always better. It can confuse the LLM. Try and add the most important rules you need
+---
 
-# General guidelines
+# 2. Архитектура проекта
 
-Any general rules you want the AI to follow.
-For example:
+## 2.1. Слои проекта (обязательные)
+Проект должен быть структурирован так:
 
-* Only use absolute positioning when necessary. Opt for responsive and well structured layouts that use flexbox and grid by default
-* Refactor code as you go to keep code clean
-* Keep file sizes small and put helper functions and components in their own files.
+```
+src/
+  components/        — UI-компоненты без логики
+  features/          — функциональные модули
+  hooks/             — UI-хуки
+  state/             — Zustand-сторы
+  services/          — бизнес-логика (PriorityService, SprintService и т.д.)
+  repositories/      — доступ к данным Supabase
+  utils/             — вспомогательные функции
+  types/             — интерфейсы, модели
+  constants/
+```
 
---------------
+## 2.2. Правила по слоям
+- **UI-компоненты**: только рендер + вызовы хуков. Никакой логики.
+- **Hooks**: хранят логику UI (перемещение, открытие модальных окон, валидаторы).
+- **State (Zustand)**: хранит только состояние, никакой доменной логики.
+- **Services**: здесь живёт бизнес-логика (таймер, каскады, спринты).
+- **Repositories**: только запросы в Supabase.
+- **Edge Functions**: только тяжёлые операции.
 
-# Design system guidelines
-Rules for how the AI should make generations look like your company's design system
+---
 
-Additionally, if you select a design system to use in the prompt box, you can reference
-your design system's components, tokens, variables and components.
-For example:
+# 3. Работа с Supabase
+- Все запросы идут **только через repositories**.
+- Никаких запросов из компонентов.
+- Все fetch-запросы должны:
+  - быть типизированы,
+  - иметь обработку ошибок,
+  - иметь чёткие интерфейсы DTO.
 
-* Use a base font-size of 14px
-* Date formats should always be in the format “Jun 10”
-* The bottom toolbar should only ever have a maximum of 4 items
-* Never use the floating action button with the bottom toolbar
-* Chips should always come in sets of 3 or more
-* Don't use a dropdown if there are 2 or fewer options
+Типы примерно такие:
 
-You can also create sub sections and add more specific details
-For example:
+```ts
+interface TaskDTO {
+  id: string;
+  title: string;
+  description?: string;
+  group: number;
+  is_completed: boolean;
+  min_required_time?: number | null;
+  max_allowed_time?: number | null;
+}
+```
 
+---
 
-## Button
-The Button component is a fundamental interactive element in our design system, designed to trigger actions or navigate
-users through the application. It provides visual feedback and clear affordances to enhance user experience.
+# 4. Таймер и интервалы
 
-### Usage
-Buttons should be used for important actions that users need to take, such as form submissions, confirming choices,
-or initiating processes. They communicate interactivity and should have clear, action-oriented labels.
+## 4.1. Принципы
+- В любой момент может работать только **один таймер**.
+- Переключение задачи = закрытие интервала + начало нового.
+- Нельзя запускать таймер для выполненной задачи.
+- Нельзя запускать таймер в Inbox.
 
-### Variants
-* Primary Button
-  * Purpose : Used for the main action in a section or page
-  * Visual Style : Bold, filled with the primary brand color
-  * Usage : One primary button per section to guide users toward the most important action
-* Secondary Button
-  * Purpose : Used for alternative or supporting actions
-  * Visual Style : Outlined with the primary color, transparent background
-  * Usage : Can appear alongside a primary button for less important actions
-* Tertiary Button
-  * Purpose : Used for the least important actions
-  * Visual Style : Text-only with no border, using primary color
-  * Usage : For actions that should be available but not emphasized
--->
+## 4.2. Оптимизация
+- Ререндер 1 раз в секунду только в TimerStore.
+- Таймлайн перерисовывается частично.
+
+---
+
+# 5. Drag & Drop правила
+- DnD не должен выполнять сетевые запросы во время drag.
+- Обновление Supabase только после drop.
+- В UI — оптимистичные апдейты.
+
+---
+
+# 6. Priority Cascade (строгая логика)
+- Если в группе нет места → задача смещает нижние задачи.
+- Если нижняя группа переполнена — каскад вниз.
+- Если уровень 1 переполнен — отмена.
+- Алгоритм — строго в PriorityService.
+- Никакой логики каскада в UI.
+
+---
+
+# 7. Sprint Service
+- Завершение спринта:
+  - таймер останавливается,
+  - создаётся журнал спринта,
+  - формируется статистика,
+  - создаётся новый спринт,
+  - незавершённые задачи переносить в те же группы.
+- SprintService должен быть атомарным.
+
+---
+
+# 8. Sprint Preparation Mode
+
+## 8.1. Min Time
+Если суммарный минимум задач превышает оставшееся время — разрешены только задачи с Min Time.
+
+## 8.2. Max Time
+При достижении лимита:
+- задача автоматически завершается,
+- таймер блокируется.
+
+---
+
+# 9. Дизайн-система Toma
+
+## 9.1. Общий стиль
+- Минимализм.
+- Максимальная ясность.
+- Чёткие отступы: 8 / 12 / 16 / 24.
+- Цвета групп задач — основной цветовой код.
+- Ни одного лишнего декоративного элемента.
+
+## 9.2. Типографика
+- Шрифт: Inter  
+- Базовый размер: 14px  
+- Масштаб: 14 / 16 / 18 / 24  
+
+## 9.3. Компоненты shadcn/ui
+Использовать обязательно:
+- Button
+- Input
+- Card
+- Modal
+- Dropdown Menu
+- Tabs
+- Badge
+- ScrollArea
+- Separator
+
+---
+
+# 10. Правила написания кода
+
+## 10.1. Именование
+- Файлы: `kebab-case.tsx`
+- Компоненты: `PascalCase`
+- Хуки: `useCamelCase`
+- Типы: `PascalCase`
+- Переменные: `camelCase`
+
+## 10.2. Файловая структура
+Каждый компонент = один файл + один SCSS/TSX блок стилей.
+
+## 10.3. Форматирование
+- 120 символов в строке максимум.
+- Один компонент на файл.
+- В начале файла — интерфейсы, потом компонент.
+
+---
+
+# 11. UI Guidelines (Toma)
+
+## 11.1. Четыре колонки
+- Hooks  
+- Inbox  
+- Sprint  
+- Timeline  
+
+Каждая должна соответствовать:
+- минимализму,
+- аккуратному layout-у,
+- понятной визуальной иерархии.
+
+## 11.2. Карточка задачи
+Минимальная:
+- название  
+- время выполнено  
+- история  
+- сотрудник (в будущем)  
+
+Без лишнего.
+
+---
+
+# 12. Git и версия кода
+- Один PR = одна фича.
+- Не смешивать UI и backend.
+- Коммиты — в формате:
+
+```
+feat: добавил логику Max Time
+fix: исправил каскад уровня 8
+refactor: вынес PriorityService
+```
+
+---
+
+# 13. Принципы Toma (философия разработки)
+- Простота = сила.
+- Решение должно быть очевидным.
+- Не добавляй ничего лишнего.
+- Всегда думай: “Как это упростить?”.
+- Каждый день должен приближать к цели.
+- Твой код должен помогать правильно проживать день.
+
+---
+
+# 14. Ограничения
+- Не изменять схему Supabase.
+- Не использовать сторонние UI-библиотеки.
+- Не создавать новые абстракции без необходимости.
+- Не использовать классовые компоненты.
+
+---
+
+# 15. Обязательные требования
+- Код компилируется.
+- Нет ошибок TS.
+- Нет dead code.
+- Код покрыт комментариями только там, где сложно.
+- Архитектура слоёв соблюдена.
+- Все сервисы изолированы.
+- Логика таймера и каскада работает строго по правилам.
+
+---
+
+# 16. Если ИИ сомневается
+- Выбирай **простой вариант**.
+- Используй **минимум зависимостей**.
+- Следуй **архитектурным слоям**.
+- Не меняй существующую структуру без крайней необходимости.
+
+---
+
+# Конец файла

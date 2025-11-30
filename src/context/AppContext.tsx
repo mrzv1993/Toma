@@ -102,7 +102,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setUser(session.user);
           setAccessToken(session.access_token);
           api.setAccessToken(session.access_token);
-          await refreshData();
+          await refreshData(session.access_token);
         }
       } catch (error) {
         console.error('Session check error:', error);
@@ -123,7 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         
         // Refresh data on explicit sign in
         if (event === 'SIGNED_IN') {
-          await refreshData();
+          await refreshData(session.access_token);
         }
       } else if (event === 'SIGNED_OUT') {
         setAccessToken(null);
@@ -149,6 +149,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Poll for data updates (auto-sync)
+  useEffect(() => {
+    if (!user || !accessToken) return;
+
+    const interval = setInterval(() => {
+      // Do not refresh if dragging to avoid interrupting UI interactions
+      if (!draggedTask) {
+        refreshData();
+      }
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [user, accessToken, draggedTask]);
 
   async function signIn(email: string, password: string) {
     try {
@@ -209,9 +223,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function refreshData() {
+  async function refreshData(explicitToken?: string) {
     // Ensure API has the current token
-    if (accessToken) {
+    if (explicitToken) {
+      api.setAccessToken(explicitToken);
+    } else if (accessToken) {
       api.setAccessToken(accessToken);
     }
 

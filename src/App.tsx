@@ -10,10 +10,12 @@ import { LogOut, Users } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './components/ui/resizable';
 import { ImperativePanelHandle } from "react-resizable-panels";
 import { PeopleManager } from './components/people/PeopleManager';
+import { ProfileSettingsDialog } from './components/ProfileSettingsDialog';
 
 function AppContent() {
   const { user, isLoading, signOut, selectedTask, setSelectedTask, updateTask } = useApp();
   const [isMobile, setIsMobile] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState({
     hooks: false,
     inbox: false,
@@ -99,9 +101,12 @@ function AppContent() {
           <h1>toma</h1>
         </div>
         <div className="flex items-center gap-4">
-          <div className="text-right">
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="text-right hover:text-[var(--color-primary)] transition-colors"
+          >
             <p>{user.email}</p>
-          </div>
+          </button>
           <button
             onClick={signOut}
             className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
@@ -111,6 +116,12 @@ function AppContent() {
           </button>
         </div>
       </div>
+
+      {/* Profile Settings Dialog */}
+      <ProfileSettingsDialog 
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
 
       {/* Main Content */}
       {isMobile ? (
