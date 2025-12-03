@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Auth } from './components/Auth';
 import { HooksColumn } from './components/HooksColumn';
+import { GoalsColumn } from './components/GoalsColumn';
 import { InboxColumn } from './components/InboxColumn';
 import { SprintColumn } from './components/SprintColumn';
 import { TimerColumn } from './components/TimerColumn';
@@ -10,14 +11,13 @@ import { LogOut, Users } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './components/ui/resizable';
 import { ImperativePanelHandle } from "react-resizable-panels";
 import { PeopleManager } from './components/people/PeopleManager';
-import { ProfileSettingsDialog } from './components/ProfileSettingsDialog';
 
 function AppContent() {
   const { user, isLoading, signOut, selectedTask, setSelectedTask, updateTask } = useApp();
   const [isMobile, setIsMobile] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState({
     hooks: false,
+    goals: false,
     inbox: false,
     sprint: false,
     timer: false
@@ -31,6 +31,7 @@ function AppContent() {
   }, []);
 
   const hooksRef = useRef<ImperativePanelHandle>(null);
+  const goalsRef = useRef<ImperativePanelHandle>(null);
   const inboxRef = useRef<ImperativePanelHandle>(null);
   const sprintRef = useRef<ImperativePanelHandle>(null);
   const timerRef = useRef<ImperativePanelHandle>(null);
@@ -49,6 +50,14 @@ function AppContent() {
       else panel.expand();
     }
   }, [collapsed.hooks]);
+
+  useEffect(() => {
+    const panel = goalsRef.current;
+    if (panel) {
+      if (collapsed.goals) panel.collapse();
+      else panel.expand();
+    }
+  }, [collapsed.goals]);
 
   useEffect(() => {
     const panel = inboxRef.current;
@@ -101,12 +110,9 @@ function AppContent() {
           <h1>toma</h1>
         </div>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => setIsProfileOpen(true)}
-            className="text-right hover:text-[var(--color-primary)] transition-colors"
-          >
+          <div className="text-right">
             <p>{user.email}</p>
-          </button>
+          </div>
           <button
             onClick={signOut}
             className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
@@ -117,17 +123,14 @@ function AppContent() {
         </div>
       </div>
 
-      {/* Profile Settings Dialog */}
-      <ProfileSettingsDialog 
-        isOpen={isProfileOpen}
-        onClose={() => setIsProfileOpen(false)}
-      />
-
       {/* Main Content */}
       {isMobile ? (
         <div className="flex-1 overflow-x-auto snap-x snap-mandatory flex h-full w-full bg-[var(--color-background)]">
            <div className="snap-center w-full min-w-0 h-full flex-shrink-0 border-r border-[var(--color-border)]">
              <HooksColumn />
+           </div>
+           <div className="snap-center w-full min-w-0 h-full flex-shrink-0 border-r border-[var(--color-border)]">
+             <GoalsColumn />
            </div>
            <div className="snap-center w-full min-w-0 h-full flex-shrink-0 border-r border-[var(--color-border)]">
              <InboxColumn />
@@ -152,8 +155,8 @@ function AppContent() {
         {/* Column 1: Hooks */}
         <ResizablePanel 
             ref={hooksRef}
-            defaultSize={20}
-            minSize={15}
+            defaultSize={15}
+            minSize={10}
             collapsible={true}
             collapsedSize={4}
             onCollapse={() => setCollapsed(prev => ({ ...prev, hooks: true }))}
@@ -166,17 +169,31 @@ function AppContent() {
           />
         </ResizablePanel>
         
-        <ResizableHandle 
-            onDoubleClick={() => {
-                hooksRef.current?.resize(20);
-                inboxRef.current?.resize(30);
-            }}
-        />
+        <ResizableHandle />
 
-        {/* Column 2: Inbox */}
+        {/* Column 2: Goals */}
+        <ResizablePanel 
+            ref={goalsRef}
+            defaultSize={20}
+            minSize={15}
+            collapsible={true}
+            collapsedSize={4}
+            onCollapse={() => setCollapsed(prev => ({ ...prev, goals: true }))}
+            onExpand={() => setCollapsed(prev => ({ ...prev, goals: false }))}
+            className={`transition-all duration-300 ease-in-out ${collapsed.goals ? 'min-w-[40px]' : ''}`}
+        >
+          <GoalsColumn 
+            isCollapsed={collapsed.goals} 
+            onToggleCollapse={() => toggleCollapse('goals')} 
+          />
+        </ResizablePanel>
+        
+        <ResizableHandle />
+
+        {/* Column 3: Inbox */}
         <ResizablePanel 
             ref={inboxRef}
-            defaultSize={30}
+            defaultSize={25}
             minSize={15}
             collapsible={true}
             collapsedSize={4}
@@ -190,17 +207,12 @@ function AppContent() {
           />
         </ResizablePanel>
 
-        <ResizableHandle 
-            onDoubleClick={() => {
-                inboxRef.current?.resize(30);
-                sprintRef.current?.resize(30);
-            }}
-        />
+        <ResizableHandle />
 
-        {/* Column 3: Sprint */}
+        {/* Column 4: Sprint */}
         <ResizablePanel 
             ref={sprintRef}
-            defaultSize={30}
+            defaultSize={25}
             minSize={15}
             collapsible={true}
             collapsedSize={4}
@@ -214,17 +226,12 @@ function AppContent() {
           />
         </ResizablePanel>
 
-        <ResizableHandle 
-            onDoubleClick={() => {
-                sprintRef.current?.resize(30);
-                timerRef.current?.resize(20);
-            }}
-        />
+        <ResizableHandle />
 
-        {/* Column 4: Timer or Task Details */}
+        {/* Column 5: Timer or Task Details */}
         <ResizablePanel 
             ref={timerRef}
-            defaultSize={20}
+            defaultSize={15}
             minSize={15}
             collapsible={true}
             collapsedSize={4}

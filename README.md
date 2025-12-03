@@ -1,7 +1,7 @@
 
-  # toma
+  # Toma
 
-  This is a code bundle for toma. The original project is available at https://www.figma.com/design/9eeFE7NRwgZ0AuFCj9SXp7/toma.
+  This is a code bundle for Toma. The original project is available at https://www.figma.com/design/9eeFE7NRwgZ0AuFCj9SXp7/Toma.
 
   ## Running the code
 

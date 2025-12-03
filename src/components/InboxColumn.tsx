@@ -25,13 +25,14 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
     setDraggedTask,
     hooks,
     activeSprint,
-    refreshData,
   } = useApp();
   const [newCategoryTitle, setNewCategoryTitle] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<'standard' | 'event'>('standard');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [addingTaskToCategoryId, setAddingTaskToCategoryId] = useState<string | null>(null);
+  
+  // Replaced single input state with map for each category
+  const [newTaskTitles, setNewTaskTitles] = useState<Record<string, string>>({});
+
   const [quickInboxTaskTitle, setQuickInboxTaskTitle] = useState('');
   const [isSubmittingQuickTask, setIsSubmittingQuickTask] = useState(false);
   const [dropIndicator, setDropIndicator] = useState<{ taskId: string; position: 'top' | 'bottom' } | null>(null);
@@ -272,12 +273,13 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
   }
 
   async function handleAddTask(categoryId: string) {
-    if (!newTaskTitle.trim()) return;
+    const title = newTaskTitles[categoryId];
+    if (!title?.trim()) return;
 
     try {
-      await createTask(newTaskTitle, null, categoryId);
-      setNewTaskTitle('');
-      setAddingTaskToCategoryId(null);
+      await createTask(title, null, categoryId);
+      // Clear input for this category
+      setNewTaskTitles(prev => ({ ...prev, [categoryId]: '' }));
     } catch (error) {
       console.error('Failed to create task:', error);
     }
@@ -306,6 +308,9 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
     return `${minutes}м`;
   }
 
+  // Filter out goal categories
+  const displayCategories = categories.filter(c => c.type !== 'goal');
+
   if (isCollapsed) {
     return (
       <div 
@@ -328,31 +333,19 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
       >
         <div className="flex items-center justify-between mb-4">
           <h2>Входящие</h2>
-          <div className="flex gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                refreshData();
-              }}
-              className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-              title="Обновить"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsAddingCategory(true);
-              }}
-              className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-              title="Добавить категорию"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsAddingCategory(true);
+            }}
+            className="p-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+            title="Добавить категорию"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
 
-        <div className="flex gap-2 mb-4" onClick={(e) => e.stopPropagation()}>
+        <div className="hidden md:flex gap-2 mb-4" onClick={(e) => e.stopPropagation()}>
           <input
             type="text"
             value={quickInboxTaskTitle}
@@ -421,14 +414,14 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
 
       {/* Categories and Tasks */}
       <div className="flex-1 overflow-y-auto p-4 min-h-0">
-        {categories.length === 0 ? (
+        {displayCategories.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-text-tertiary)]">
             <Inbox className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p>Нет категорий</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {categories.map((category) => {
+            {displayCategories.map((category) => {
               const categoryTasks = inboxTasks.filter((task) => task.categoryId === category.id);
 
               return (
@@ -448,13 +441,6 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                       </span>
                     </div>
                     <div className="flex gap-1">
-                      <button
-                        onClick={() => setAddingTaskToCategoryId(category.id)}
-                        className="p-1 hover:bg-[var(--color-surface-hover)] rounded"
-                        title="Добавить задачу"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
                       {category.id !== 'default' && (
                         <button
                           onClick={() => handleDeleteCategory(category.id)}
@@ -466,38 +452,6 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                       )}
                     </div>
                   </div>
-
-                  {/* Add Task Input */}
-                  {addingTaskToCategoryId === category.id && (
-                    <div className="p-3 border-b border-[var(--color-border)]">
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleAddTask(category.id)}
-                          placeholder="Название задачи"
-                          autoFocus
-                          className="flex-1 px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]"
-                        />
-                        <button
-                          onClick={() => handleAddTask(category.id)}
-                          className="px-3 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded transition-colors"
-                        >
-                          +
-                        </button>
-                        <button
-                          onClick={() => {
-                            setAddingTaskToCategoryId(null);
-                            setNewTaskTitle('');
-                          }}
-                          className="px-3 py-2 hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Tasks List */}
                   <div className="p-0">
@@ -588,7 +542,6 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                                             value={task.plannedStartTime ? toLocalISOString(task.plannedStartTime) : ''}
                                             onChange={(e) => {
                                                 const val = e.target.value;
-                                                // Create date object preserving local time but storing as ISO
                                                 const date = val ? new Date(val).toISOString() : null;
                                                 updateTask(task.id, { plannedStartTime: date });
                                             }}
@@ -618,58 +571,55 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                               </div>
 
                               <div className="flex items-center gap-3 text-xs text-[var(--color-text-tertiary)] flex-shrink-0">
-                                {/* People */}
-                                <div className="flex items-center">
-                                    <div className="flex -space-x-1.5 hover:space-x-0.5 transition-all mr-1">
-                                        {(task.assignedPeopleIds || [])
-                                            .map(id => people.find(p => p.id === id))
-                                            .filter(Boolean)
-                                            .slice(0, 3)
-                                            .map((person) => (
-                                                <PersonAvatar 
-                                                    key={person!.id} 
-                                                    person={person!} 
-                                                    size="sm" 
-                                                    className="w-5 h-5 border border-[var(--color-background)]" 
-                                                />
-                                            ))
-                                        }
-                                        {(task.assignedPeopleIds?.length || 0) > 3 && (
-                                            <div className="w-5 h-5 rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-background)] flex items-center justify-center text-[9px] text-[var(--color-text-secondary)]">
-                                                +{(task.assignedPeopleIds?.length || 0) - 3}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {task.priorityLevel && (
-                                  <div className="px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium">
-                                    {task.priorityLevel}
-                                  </div>
-                                )}
-
                                 {hook && (
-                                  <span className="max-w-[100px] truncate" title={hook.title}>
-                                    {hook.title}
-                                  </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                                        #{hook.title}
+                                    </span>
                                 )}
+                                {task.assignedPeopleIds && task.assignedPeopleIds.length > 0 && (
+                                    <div className="flex -space-x-2">
+                                        {task.assignedPeopleIds.map(id => {
+                                            const person = people.find(p => p.id === id);
+                                            if (!person) return null;
+                                            return <PersonAvatar key={id} person={person} size="xs" className="w-5 h-5 border-2 border-[var(--color-background)]" />;
+                                        })}
+                                    </div>
+                                )}
+                                
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTask(task.id);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-all"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
-
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteTask(task.id);
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-opacity"
-                                title="Удалить"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
                             </div>
                           );
                         })}
                       </div>
                     )}
+                  </div>
+
+                  {/* Add Task Input at the bottom */}
+                  <div className="p-2 flex gap-2 border-t border-[var(--color-border)]">
+                    <input
+                      type="text"
+                      value={newTaskTitles[category.id] || ''}
+                      onChange={(e) => setNewTaskTitles(prev => ({ ...prev, [category.id]: e.target.value }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddTask(category.id)}
+                      placeholder="Добавить задачу..."
+                      className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm focus:outline-none focus:border-[var(--color-primary)]"
+                    />
+                    <button
+                      onClick={() => handleAddTask(category.id)}
+                      disabled={!newTaskTitles[category.id]?.trim()}
+                      className="px-2 py-1 bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded text-[var(--color-text-secondary)] disabled:opacity-50"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -680,12 +630,12 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
 
       {recurrenceTask && (
         <TaskRecurrenceDialog 
-          task={recurrenceTask}
-          isOpen={true}
-          onClose={() => setRecurrenceTask(null)}
-          onSave={(recurrence) => {
-             updateTask(recurrenceTask.id, { recurrence });
-          }}
+            task={recurrenceTask}
+            onClose={() => setRecurrenceTask(null)}
+            onSave={async (settings) => {
+                await updateTask(recurrenceTask.id, { recurrence: settings });
+                setRecurrenceTask(null);
+            }}
         />
       )}
     </div>

@@ -59,6 +59,7 @@ export interface Task {
   recurrence?: RecurrenceSettings | null;
   description?: string | null;
   subtasks?: Subtask[];
+  relatedTaskIds?: string[];
 }
 
 export interface Subtask {
@@ -93,7 +94,7 @@ export interface TaskWithHistory extends Task {
 export interface Category {
   id: string;
   title: string;
-  type?: 'standard' | 'event';
+  type?: 'standard' | 'event' | 'goal';
   userId: string;
   order: number;
   createdAt: string;

@@ -35,6 +35,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
     timer,
     startTimer,
     pauseTimer,
+    stopTimer,
     hooks,
     people,
     startSprint,
@@ -73,9 +74,32 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                 }
             }
         }
+
+        // Check Sprint Completion (9 hours)
+        if (activeSprint?.startedAt && timer.startedAt) {
+             const sprintTasks = tasks.filter(t => t.sprintId === activeSprint.id);
+             const liveTotal = sprintTasks.reduce((sum, task) => {
+                 if (timer.taskId === task.id) {
+                     const currentSession = Math.floor((currentTime - new Date(timer.startedAt!).getTime()) / 1000);
+                     return sum + task.spentTime + currentSession;
+                 }
+                 return sum + task.spentTime;
+             }, 0);
+             
+             if (liveTotal >= SPRINT_DURATION_SECONDS) {
+                 // Stop timer and open journal
+                 const currentSession = Math.floor((currentTime - new Date(timer.startedAt!).getTime()) / 1000);
+                 const newSpentTime = (timer.elapsedTime || 0) + currentSession;
+                 
+                 stopTimer(newSpentTime).then(() => {
+                     setIsJournalOpen(true);
+                     // alert("Рабочее время спринта (9 часов) истекло. Спринт завершён.");
+                 });
+             }
+        }
     }, 1000);
     return () => clearInterval(interval);
-  }, [timer.isRunning, timer.taskId, timer.startedAt, tasks, completeTask]);
+  }, [timer.isRunning, timer.taskId, timer.startedAt, tasks, completeTask, activeSprint, stopTimer]);
 
   // Get sprint tasks
   const sprintTasks = tasks.filter((task) => task.sprintId === activeSprint?.id);
