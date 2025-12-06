@@ -8,7 +8,6 @@ import { SprintColumn } from './components/SprintColumn';
 import { TimerColumn } from './components/TimerColumn';
 import { TaskDetailsPanel } from './components/TaskDetailsDialog';
 import { IdeasSection } from './components/IdeasSection';
-import { ServerStatusBanner } from './components/ServerStatusBanner';
 import { LogOut, Users, ListTodo, Lightbulb } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './components/ui/resizable';
 import { ImperativePanelHandle } from "react-resizable-panels";
@@ -103,9 +102,6 @@ function AppContent() {
 
   return (
     <div className="h-screen flex flex-col bg-[var(--color-background)]">
-      {/* Server Status Banner */}
-      <ServerStatusBanner />
-      
       {/* Top Bar */}
       <div className="flex items-center justify-between px-6 py-4 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex-shrink-0">
         <div className="flex items-center gap-6">

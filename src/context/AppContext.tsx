@@ -47,7 +47,6 @@ interface AppContextType {
   stopTimer: (elapsedTime: number) => Promise<void>;
   startSprint: () => Promise<void>;
   completeSprint: (journalData: any) => Promise<void>;
-  updateSprintSettings: (settings: { sprintDuration?: number; maxLevels?: number }) => Promise<void>;
 
   // UI State
   viewMode: 'current' | 'history';
@@ -784,16 +783,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function updateSprintSettings(settings: { sprintDuration?: number; maxLevels?: number }) {
-    try {
-      await api.updateSprintSettings(settings);
-      await refreshData();
-    } catch (error) {
-      console.error('Update sprint settings error:', error);
-      throw error;
-    }
-  }
-
   const value: AppContextType = {
     user,
     accessToken,
@@ -832,7 +821,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stopTimer,
     startSprint,
     completeSprint,
-    updateSprintSettings,
     viewMode,
     setViewMode,
     selectedHistorySprint,

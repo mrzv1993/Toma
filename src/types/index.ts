@@ -113,8 +113,6 @@ export interface Sprint {
   startedAt?: string | null; // Preparation mode if null
   tasks: Task[]; // Changed from SprintTask[] to Task[] because in server/index.tsx we attach actual Task objects
   journal?: SprintJournal;
-  sprintDuration?: number; // Duration in hours (1-24), defaults to 9
-  maxLevels?: number; // Maximum levels (1-9), defaults to 9
 }
 
 export interface SprintTask {

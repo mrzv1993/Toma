@@ -15,39 +15,41 @@ function getSprintDuration(userEmail?: string): number {
 
 const app = new Hono();
 
-// CORS must be set up before any routes
+app.get('/make-server-9fa24130/health', (c) => c.json({ status: 'ok' }));
+
+// CORS configuration with allowed origins
+const allowedOrigins = [
+  'https://tommma.ru',
+  'https://www.tommma.ru',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
 app.use('*', cors({
-  origin: '*',
+  origin: (origin) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return '*';
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) return origin;
+    
+    // Allow Figma Make domains (*.supabase.co, *.figma.com, etc.)
+    if (origin.includes('supabase.co') || 
+        origin.includes('figma.com') || 
+        origin.includes('.framer.app') ||
+        origin.includes('localhost')) {
+      return origin;
+    }
+    
+    // For development: temporarily allow all origins
+    // Remove this line when moving to production
+    return origin;
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
 app.use('*', logger(console.log));
-
-// Health check endpoint (must be BEFORE auth middleware)
-app.get('/health', (c) => {
-  console.log('[Server] Health check called');
-  return c.json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
-});
-
-// Ping endpoint for connectivity test
-app.get('/ping', (c) => {
-  console.log('[Server] Ping called');
-  return c.text('pong');
-});
-
-// Root endpoint for basic connectivity test
-app.get('/', (c) => {
-  console.log('[Server] Root endpoint called');
-  return c.json({ 
-    message: 'Toma API Server',
-    endpoints: ['/health', '/ping', '/tasks', '/categories', '/sprint', '/timer'],
-    timestamp: new Date().toISOString()
-  });
-});
 
 let globalSupabaseClient: any = null;
 
@@ -137,7 +139,7 @@ async function getAuthenticatedUser(request: Request) {
 // ============================================
 
 // Sign Up
-app.post('/auth/signup', async (c) => {
+app.post('/make-server-9fa24130/auth/signup', async (c) => {
   try {
     const { email, password } = await c.req.json();
     
@@ -199,8 +201,6 @@ app.post('/auth/signup', async (c) => {
       isCompleted: false,
       startedAt: null,
       tasks: [],
-      sprintDuration: 9, // Default duration
-      maxLevels: 9, // Default max levels
     };
     
     await kv.set(`user:${userId}:activeSprint`, firstSprint);
@@ -228,7 +228,7 @@ app.post('/auth/signup', async (c) => {
 // ============================================
 
 // Get all hook groups
-app.get('/hook-groups', async (c) => {
+app.get('/make-server-9fa24130/hook-groups', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -244,7 +244,7 @@ app.get('/hook-groups', async (c) => {
 });
 
 // Create hook group
-app.post('/hook-groups', async (c) => {
+app.post('/make-server-9fa24130/hook-groups', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -273,7 +273,7 @@ app.post('/hook-groups', async (c) => {
 });
 
 // Update hook group
-app.put('/hook-groups/:id', async (c) => {
+app.put('/make-server-9fa24130/hook-groups/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -305,7 +305,7 @@ app.put('/hook-groups/:id', async (c) => {
 });
 
 // Delete hook group
-app.delete('/hook-groups/:id', async (c) => {
+app.delete('/make-server-9fa24130/hook-groups/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -342,7 +342,7 @@ app.delete('/hook-groups/:id', async (c) => {
 // ============================================
 
 // Get all hooks
-app.get('/hooks', async (c) => {
+app.get('/make-server-9fa24130/hooks', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -358,7 +358,7 @@ app.get('/hooks', async (c) => {
 });
 
 // Create hook
-app.post('/hooks', async (c) => {
+app.post('/make-server-9fa24130/hooks', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -389,7 +389,7 @@ app.post('/hooks', async (c) => {
 });
 
 // Update hook
-app.put('/hooks/:id', async (c) => {
+app.put('/make-server-9fa24130/hooks/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -420,7 +420,7 @@ app.put('/hooks/:id', async (c) => {
 });
 
 // Delete hook
-app.delete('/hooks/:id', async (c) => {
+app.delete('/make-server-9fa24130/hooks/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -446,7 +446,7 @@ app.delete('/hooks/:id', async (c) => {
 // ============================================
 
 // Get all categories
-app.get('/categories', async (c) => {
+app.get('/make-server-9fa24130/categories', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -462,7 +462,7 @@ app.get('/categories', async (c) => {
 });
 
 // Create category
-app.post('/categories', async (c) => {
+app.post('/make-server-9fa24130/categories', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -492,7 +492,7 @@ app.post('/categories', async (c) => {
 });
 
 // Delete category
-app.delete('/categories/:id', async (c) => {
+app.delete('/make-server-9fa24130/categories/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -533,7 +533,7 @@ app.delete('/categories/:id', async (c) => {
 // ============================================
 
 // Get all people
-app.get('/people', async (c) => {
+app.get('/make-server-9fa24130/people', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -549,7 +549,7 @@ app.get('/people', async (c) => {
 });
 
 // Create person
-app.post('/people', async (c) => {
+app.post('/make-server-9fa24130/people', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -585,7 +585,7 @@ app.post('/people', async (c) => {
 });
 
 // Update person
-app.put('/people/:id', async (c) => {
+app.put('/make-server-9fa24130/people/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -617,7 +617,7 @@ app.put('/people/:id', async (c) => {
 });
 
 // Delete person
-app.delete('/people/:id', async (c) => {
+app.delete('/make-server-9fa24130/people/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -661,7 +661,7 @@ app.delete('/people/:id', async (c) => {
 // ============================================
 
 // Get all ideas
-app.get('/ideas', async (c) => {
+app.get('/make-server-9fa24130/ideas', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -677,7 +677,7 @@ app.get('/ideas', async (c) => {
 });
 
 // Create idea
-app.post('/ideas', async (c) => {
+app.post('/make-server-9fa24130/ideas', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -712,7 +712,7 @@ app.post('/ideas', async (c) => {
 });
 
 // Update idea
-app.put('/ideas/:id', async (c) => {
+app.put('/make-server-9fa24130/ideas/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -745,7 +745,7 @@ app.put('/ideas/:id', async (c) => {
 });
 
 // Delete idea
-app.delete('/ideas/:id', async (c) => {
+app.delete('/make-server-9fa24130/ideas/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -771,7 +771,7 @@ app.delete('/ideas/:id', async (c) => {
 // ============================================
 
 // Get all tasks
-app.get('/tasks', async (c) => {
+app.get('/make-server-9fa24130/tasks', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -787,7 +787,7 @@ app.get('/tasks', async (c) => {
 });
 
 // Create task
-app.post('/tasks', async (c) => {
+app.post('/make-server-9fa24130/tasks', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -835,7 +835,7 @@ app.post('/tasks', async (c) => {
 });
 
 // Update task
-app.put('/tasks/:id', async (c) => {
+app.put('/make-server-9fa24130/tasks/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -875,7 +875,7 @@ app.put('/tasks/:id', async (c) => {
 });
 
 // Move task to sprint
-app.post('/tasks/:id/move-to-sprint', async (c) => {
+app.post('/make-server-9fa24130/tasks/:id/move-to-sprint', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -932,7 +932,7 @@ app.post('/tasks/:id/move-to-sprint', async (c) => {
 });
 
 // Move task out of sprint
-app.post('/tasks/:id/move-to-inbox', async (c) => {
+app.post('/make-server-9fa24130/tasks/:id/move-to-inbox', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -966,7 +966,7 @@ app.post('/tasks/:id/move-to-inbox', async (c) => {
 });
 
 // Complete task
-app.post('/tasks/:id/complete', async (c) => {
+app.post('/make-server-9fa24130/tasks/:id/complete', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -1095,7 +1095,7 @@ app.post('/tasks/:id/complete', async (c) => {
 });
 
 // Delete task
-app.delete('/tasks/:id', async (c) => {
+app.delete('/make-server-9fa24130/tasks/:id', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -1136,7 +1136,7 @@ app.delete('/tasks/:id', async (c) => {
 // ============================================
 
 // Get timer state (Legacy/Compat)
-app.get('/timer', async (c) => {
+app.get('/make-server-9fa24130/timer', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1162,7 +1162,7 @@ app.get('/timer', async (c) => {
 });
 
 // Get time entries (timeline history)
-app.get('/time-entries', async (c) => {
+app.get('/make-server-9fa24130/time-entries', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1179,7 +1179,7 @@ app.get('/time-entries', async (c) => {
 });
 
 // Start timer (Create new TimeEntry)
-app.post('/timer/start', async (c) => {
+app.post('/make-server-9fa24130/timer/start', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1216,7 +1216,7 @@ app.post('/timer/start', async (c) => {
                 const spentMinutes = Math.floor(spent / 60);
                 return c.json({ 
                     success: false, 
-                    error: `Лимит времени на задачу исчерпан. (Лимит: ${task.maxAllowedTime} мин, Затрачено в этом спринте: ${spentMinutes} ин)` 
+                    error: `Лимит времени на задачу исчерпан. (Лимит: ${task.maxAllowedTime} мин, Затрачено в этом спринте: ${spentMinutes} мин)` 
                 }, 400);
             }
         }
@@ -1290,7 +1290,7 @@ app.post('/timer/start', async (c) => {
 });
 
 // Pause timer
-app.post('/timer/pause', async (c) => {
+app.post('/make-server-9fa24130/timer/pause', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1336,7 +1336,7 @@ app.post('/timer/pause', async (c) => {
 });
 
 // Stop/Complete timer
-app.post('/timer/stop', async (c) => {
+app.post('/make-server-9fa24130/timer/stop', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1414,7 +1414,7 @@ app.post('/timer/stop', async (c) => {
 // ============================================
 
 // Start sprint
-app.post('/sprint/start', async (c) => {
+app.post('/make-server-9fa24130/sprint/start', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1443,7 +1443,7 @@ app.post('/sprint/start', async (c) => {
 });
 
 // Complete sprint (with journal)
-app.post('/sprint/complete', async (c) => {
+app.post('/make-server-9fa24130/sprint/complete', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) return c.json({ success: false, error: 'Unauthorized' }, 401);
   
@@ -1503,8 +1503,6 @@ app.post('/sprint/complete', async (c) => {
         isCompleted: false,
         startedAt: null,
         tasks: [], // This is just for structure, tasks are stored separately
-        sprintDuration: activeSprint.sprintDuration || 9, // Preserve settings from previous sprint
-        maxLevels: activeSprint.maxLevels || 9, // Preserve settings from previous sprint
     };
     await kv.set(`user:${user.id}:activeSprint`, newSprint);
 
@@ -1571,7 +1569,7 @@ app.post('/sprint/complete', async (c) => {
 });
 
 // Get active sprint
-app.get('/sprint/active', async (c) => {
+app.get('/make-server-9fa24130/sprint/active', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -1587,7 +1585,7 @@ app.get('/sprint/active', async (c) => {
 });
 
 // Get sprint history
-app.get('/sprint/history', async (c) => {
+app.get('/make-server-9fa24130/sprint/history', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -1610,7 +1608,7 @@ app.get('/sprint/history', async (c) => {
 });
 
 // Admin: Reset active sprint times
-app.post('/admin/reset-active-sprint-times', async (c) => {
+app.post('/make-server-9fa24130/admin/reset-active-sprint-times', async (c) => {
   const user = await getAuthenticatedUser(c.req.raw);
   if (!user) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
@@ -1656,50 +1654,6 @@ app.post('/admin/reset-active-sprint-times', async (c) => {
     return c.json({ success: true, message: 'Active sprint task times reset' });
   } catch (error) {
     console.log(`Reset active sprint times error: ${error}`);
-    return c.json({ success: false, error: String(error) }, 500);
-  }
-});
-
-// Update sprint settings (duration and max levels)
-app.post('/sprint/update-settings', async (c) => {
-  const user = await getAuthenticatedUser(c.req.raw);
-  if (!user) {
-    return c.json({ success: false, error: 'Unauthorized' }, 401);
-  }
-  
-  try {
-    const { sprintDuration, maxLevels } = await c.req.json();
-    
-    // Validate inputs
-    if (sprintDuration !== undefined && (sprintDuration < 1 || sprintDuration > 24)) {
-      return c.json({ success: false, error: 'Sprint duration must be between 1 and 24 hours' }, 400);
-    }
-    
-    if (maxLevels !== undefined && (maxLevels < 1 || maxLevels > 9)) {
-      return c.json({ success: false, error: 'Max levels must be between 1 and 9' }, 400);
-    }
-    
-    const activeSprint = await kv.get(`user:${user.id}:activeSprint`);
-    if (!activeSprint) {
-      return c.json({ success: false, error: 'No active sprint' }, 400);
-    }
-    
-    // Only allow settings change in preparation mode
-    if (activeSprint.startedAt) {
-      return c.json({ success: false, error: 'Cannot change settings during active sprint' }, 400);
-    }
-    
-    const updatedSprint = {
-      ...activeSprint,
-      sprintDuration: sprintDuration !== undefined ? sprintDuration : activeSprint.sprintDuration,
-      maxLevels: maxLevels !== undefined ? maxLevels : activeSprint.maxLevels,
-    };
-    
-    await kv.set(`user:${user.id}:activeSprint`, updatedSprint);
-    
-    return c.json({ success: true, data: updatedSprint });
-  } catch (error) {
-    console.log(`Update sprint settings error: ${error}`);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });

@@ -3,10 +3,9 @@ import { useDrag, useDrop } from 'react-dnd';
 import { useApp } from '../context/AppContext';
 import { api } from '../utils/api';
 import { Task, PRIORITY_LEVELS, getSprintDuration } from '../types';
-import { History, GripVertical, CheckSquare, Square, Play, Pause, Lock, RotateCw, BookOpen, Settings } from 'lucide-react';
+import { History, GripVertical, CheckSquare, Square, Play, Pause, Lock, RotateCw, BookOpen } from 'lucide-react';
 import { PersonAvatar } from './people/PersonAvatar';
 import { SprintJournalModal } from './SprintJournalModal';
-import { SprintSettingsDialog } from './SprintSettingsDialog';
 
 const PRIORITY_NAMES: { [key: number]: string } = {
     1: 'Альфа',
@@ -43,7 +42,6 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
     startSprint,
     setSelectedTask,
     user,
-    updateSprintSettings,
   } = useApp();
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -54,7 +52,6 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
   const [now, setNow] = useState(Date.now());
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [isHistoryJournalOpen, setIsHistoryJournalOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const isStoppingSprintRef = useRef(false);
 
   React.useEffect(() => {
@@ -846,7 +843,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                                   e.stopPropagation();
                                   const isTimeoutCompleted = task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60;
                                   if (isTimeoutCompleted) {
-                                      alert("адача завершена автоматически по истечении времени и не мжет быть возобновлена.");
+                                      alert("адача завершена автоматически по истечении времени и не м��жет быть возобновлена.");
                                       return;
                                   }
                                   task.isDone ? updateTask(task.id, { isDone: false }) : handleCompleteTask(task.id);
@@ -1075,23 +1072,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
              <History className="w-4 h-4" />
              <span>История спринтов</span>
           </button>
-          <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="flex-1 flex items-center justify-center gap-2 p-3 md:p-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
-          >
-              <Settings className="w-4 h-4" />
-              <span>Настройки спринта</span>
-          </button>
       </div>
-
-      {isSettingsOpen && (
-          <SprintSettingsDialog
-              isOpen={isSettingsOpen}
-              onClose={() => setIsSettingsOpen(false)}
-              activeSprint={activeSprint}
-              onSave={updateSprintSettings}
-          />
-      )}
     </div>
   );
 }

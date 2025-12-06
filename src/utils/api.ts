@@ -69,7 +69,6 @@ class ApiFacade {
   getSprintHistory = SprintRepository.getHistory;
   startSprint = SprintRepository.start;
   completeSprint = SprintRepository.complete;
-  updateSprintSettings = SprintRepository.updateSettings;
   resetActiveSprintTimes = SprintRepository.resetActiveSprintTimes;
 
   // Ideas

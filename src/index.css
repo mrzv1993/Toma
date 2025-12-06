@@ -99,7 +99,6 @@
     --spacing: .25rem;
     --container-2xl: 42rem;
     --container-3xl: 48rem;
-    --container-7xl: 80rem;
     --text-xs: .75rem;
     --text-xs--line-height: calc(1 / .75);
     --text-sm: .875rem;
@@ -898,10 +897,6 @@
     width: calc(var(--spacing) * 14);
   }
 
-  .w-16 {
-    width: calc(var(--spacing) * 16);
-  }
-
   .w-20 {
     width: calc(var(--spacing) * 20);
   }
@@ -942,10 +937,6 @@
     max-width: var(--container-3xl);
   }
 
-  .max-w-7xl {
-    max-width: var(--container-7xl);
-  }
-
   .max-w-\[130px\] {
     max-width: 130px;
   }
@@ -960,10 +951,6 @@
 
   .max-w-\[calc\(100\%-2rem\)\] {
     max-width: calc(100% - 2rem);
-  }
-
-  .max-w-md {
-    max-width: var(--spacing-md);
   }
 
   .min-w-0 {
@@ -1055,10 +1042,6 @@
 
   .\[appearance\:textfield\] {
     appearance: textfield;
-  }
-
-  .appearance-none {
-    appearance: none;
   }
 
   .break-inside-avoid {
@@ -1626,26 +1609,12 @@
     }
   }
 
-  .bg-red-600 {
-    background-color: var(--color-red-600);
-  }
-
   .bg-secondary {
     background-color: oklch(.97 0 0);
   }
 
   .bg-transparent {
     background-color: #0000;
-  }
-
-  .bg-white\/20 {
-    background-color: #fff3;
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .bg-white\/20 {
-      background-color: color-mix(in oklab, var(--color-white) 20%, transparent);
-    }
   }
 
   .bg-yellow-500\/10 {
@@ -2070,10 +2039,6 @@
     text-decoration-line: line-through;
   }
 
-  .no-underline {
-    text-decoration-line: none;
-  }
-
   .underline-offset-4 {
     text-underline-offset: 4px;
   }
@@ -2257,22 +2222,6 @@
     .group-hover\/header\:opacity-100:is(:where(.group\/header):hover *) {
       opacity: 1;
     }
-  }
-
-  .group-data-\[disabled\=true\]\:pointer-events-none:is(:where(.group)[data-disabled="true"] *) {
-    pointer-events: none;
-  }
-
-  .group-data-\[disabled\=true\]\:opacity-50:is(:where(.group)[data-disabled="true"] *) {
-    opacity: .5;
-  }
-
-  .peer-disabled\:cursor-not-allowed:is(:where(.peer):disabled ~ *) {
-    cursor: not-allowed;
-  }
-
-  .peer-disabled\:opacity-50:is(:where(.peer):disabled ~ *) {
-    opacity: .5;
   }
 
   .selection\:bg-primary ::selection, .selection\:bg-primary::selection {
@@ -2516,18 +2465,6 @@
     @supports (color: color-mix(in lab, red, red)) {
       .hover\:bg-white\/5:hover {
         background-color: color-mix(in oklab, var(--color-white) 5%, transparent);
-      }
-    }
-  }
-
-  @media (hover: hover) {
-    .hover\:bg-white\/30:hover {
-      background-color: #ffffff4d;
-    }
-
-    @supports (color: color-mix(in lab, red, red)) {
-      .hover\:bg-white\/30:hover {
-        background-color: color-mix(in oklab, var(--color-white) 30%, transparent);
       }
     }
   }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Trash2, Edit2, RefreshCw } from 'lucide-react';
+import { Plus, X, Trash2, Edit2 } from 'lucide-react';
 import { api } from '../utils/api';
 import {
   Dialog,
@@ -35,61 +35,10 @@ export function IdeasSection() {
   const loadIdeas = async () => {
     try {
       setIsLoading(true);
-      console.log('Loading ideas from server...');
-      
-      // Try to load from server
       const response = await api.getIdeas();
-      console.log('Ideas loaded from server:', response.length);
-      
-      // Check if localStorage has old data that needs migration
-      if (response.length === 0) {
-        console.log('No ideas on server, checking localStorage for migration...');
-        const localIdeas = localStorage.getItem('ideas');
-        if (localIdeas) {
-          try {
-            const parsedIdeas = JSON.parse(localIdeas);
-            if (Array.isArray(parsedIdeas) && parsedIdeas.length > 0) {
-              console.log(`Found ${parsedIdeas.length} ideas in localStorage, migrating to server...`);
-              
-              // Migrate each idea to server
-              const migratedIdeas = [];
-              for (const idea of parsedIdeas) {
-                try {
-                  const newIdea = await api.createIdea({
-                    text: idea.text || idea.content || '',
-                    tags: idea.tags || [],
-                    color: idea.color || '#FFF8E1'
-                  });
-                  migratedIdeas.push(newIdea);
-                } catch (err) {
-                  console.error('Failed to migrate idea:', err);
-                }
-              }
-              
-              setIdeas(migratedIdeas);
-              console.log(`Successfully migrated ${migratedIdeas.length} ideas to server`);
-              
-              // Clear localStorage after successful migration
-              localStorage.removeItem('ideas');
-              console.log('Cleared localStorage ideas after migration');
-              return;
-            }
-          } catch (err) {
-            console.error('Error parsing localStorage ideas:', err);
-          }
-        }
-      }
-      
       setIdeas(response);
     } catch (error) {
       console.error('Failed to load ideas:', error);
-      console.error('Error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      
-      // Show user-friendly error
-      alert('Не удалось загрузить записки. Проверьте подключение к интернету и попробуйте перезагрузить страницу.');
     } finally {
       setIsLoading(false);
     }
@@ -253,11 +202,8 @@ export function IdeasSection() {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center bg-[var(--color-background)]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 border-4 border-[var(--color-primary)] border-t-transparent rounded-full animate-spin" />
-          <div className="text-[var(--color-text-secondary)]">Загрузка записок...</div>
-        </div>
+      <div className="h-full flex items-center justify-center">
+        <div className="text-[var(--color-text-secondary)]">Загрузка записок...</div>
       </div>
     );
   }
@@ -400,23 +346,12 @@ export function IdeasSection() {
 
       {/* Main Area - Ideas Grid */}
       <div className="flex-1 p-6 overflow-y-auto">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-[var(--color-text-secondary)] text-sm">
-            {filteredIdeas.length === 0 ? (
-              'Нет записок'
-            ) : (
-              `${filteredIdeas.length} ${filteredIdeas.length === 1 ? 'записка' : filteredIdeas.length < 5 ? 'записки' : 'записок'}`
-            )}
-          </div>
-          <button
-            onClick={loadIdeas}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] rounded transition-colors disabled:opacity-50"
-            title="Обновить записки"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Обновить
-          </button>
+        <div className="mb-4 text-[var(--color-text-secondary)] text-sm">
+          {filteredIdeas.length === 0 ? (
+            'Нет записок'
+          ) : (
+            `${filteredIdeas.length} ${filteredIdeas.length === 1 ? 'записка' : filteredIdeas.length < 5 ? 'записки' : 'записок'}`
+          )}
         </div>
 
         {/* Masonry Layout using CSS columns */}
