@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
-import { Sprint, Task, SPRINT_DURATION_SECONDS } from '../types';
+import { Sprint, Task, getSprintDuration } from '../types';
 import { X, Check, Save } from 'lucide-react';
 
 interface SprintJournalModalProps {
@@ -14,7 +14,7 @@ interface SprintJournalModalProps {
 }
 
 export function SprintJournalModal({ isOpen, onClose, sprint, tasks, readOnly, initialAnswers }: SprintJournalModalProps) {
-  const { completeSprint } = useApp();
+  const { completeSprint, user } = useApp();
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [answers, setAnswers] = useState({
@@ -58,8 +58,9 @@ export function SprintJournalModal({ isOpen, onClose, sprint, tasks, readOnly, i
   const completedTasks = sprintTasks.filter(t => t.isDone);
   const unfinishedTasks = sprintTasks.filter(t => !t.isDone);
   const totalTime = sprintTasks.reduce((sum, t) => sum + t.spentTime, 0);
-  // Calculate progress based on time (9 hours goal)
-  const timeProgress = (totalTime / SPRINT_DURATION_SECONDS) * 100;
+  const sprintDuration = getSprintDuration(user?.email);
+  // Calculate progress based on time (demo: 10 min, normal: 9 hours)
+  const timeProgress = (totalTime / sprintDuration) * 100;
   const isTimeGoalMet = timeProgress >= 100;
 
   const taskProgress = sprintTasks.length > 0 
@@ -112,7 +113,7 @@ export function SprintJournalModal({ isOpen, onClose, sprint, tasks, readOnly, i
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-3xl bg-[#0F1117] border border-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden">
+      <div className="w-full max-w-3xl min-w-[360px] bg-[#0F1117] border border-gray-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 overflow-hidden">
         
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-800 bg-[#0F1117]">

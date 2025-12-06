@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { api } from '../utils/api';
-import { Task, Hook, Category, Sprint, TimerState, HookGroup, Person } from '../types';
+import { Task, Hook, Category, Sprint, TimerState, HookGroup, Person, getSprintDuration } from '../types';
 
 interface AppContextType {
   // Auth
@@ -47,6 +47,7 @@ interface AppContextType {
   stopTimer: (elapsedTime: number) => Promise<void>;
   startSprint: () => Promise<void>;
   completeSprint: (journalData: any) => Promise<void>;
+  updateSprintSettings: (settings: { sprintDuration?: number; maxLevels?: number }) => Promise<void>;
 
   // UI State
   viewMode: 'current' | 'history';
@@ -186,7 +187,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function signOut() {
     try {
-      await supabase.auth.signOut();
+      // Clear local state first to prevent further API calls
       setUser(null);
       setAccessToken(null);
       api.setAccessToken(null);
@@ -203,31 +204,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
         startedAt: null,
         elapsedTime: 0,
       });
+      
+      // Then sign out from Supabase (this may fail if session is invalid, but that's ok)
+      await supabase.auth.signOut();
     } catch (error) {
-      console.error('Sign out error:', error);
-      throw error;
+      // Don't throw - just log the error. The local state is already cleared.
+      console.warn('Sign out from Supabase failed (session may already be invalid):', error);
     }
   }
 
   async function refreshData() {
-    // Ensure API has the current token
-    if (accessToken) {
-      api.setAccessToken(accessToken);
+    // Ensure we have a valid access token before making requests
+    // Check the API client directly since state updates are async
+    if (!api.hasAccessToken()) {
+      console.warn('refreshData called without access token');
+      return;
     }
 
     try {
       // Execute requests sequentially to avoid network limits and "Network connection lost" errors
       // We use a helper to handle errors gracefully for each request
       const ERROR_SYMBOL = Symbol('error');
+      let hasSignedOut = false; // Track if we've signed out due to unauthorized
+      
       const fetchSafe = async <T,>(promise: Promise<{ success: boolean, data: T }>): Promise<T | typeof ERROR_SYMBOL> => {
+        // If we've already signed out, don't make more requests
+        if (hasSignedOut) {
+          return ERROR_SYMBOL;
+        }
+        
         try {
           const res = await promise;
           return res.success ? res.data : ERROR_SYMBOL;
         } catch (e: any) {
           if (e.message === 'Unauthorized' || (e.message && e.message.includes('Unauthorized'))) {
              console.error('Refresh failed with Unauthorized. Signing out...');
-             signOut(); // Force sign out to clear invalid session
-             throw e; // Stop refresh chain
+             hasSignedOut = true; // Set flag to prevent further requests
+             await signOut(); // Force sign out to clear invalid session
+             // Don't throw - just return ERROR_SYMBOL to stop further requests
+             return ERROR_SYMBOL;
           }
           console.warn('Partial refresh failed:', e);
           return ERROR_SYMBOL;
@@ -237,28 +252,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 1. Tasks (Most critical)
       const tasksData = await fetchSafe(api.getTasks());
       if (tasksData !== ERROR_SYMBOL) setTasks(tasksData as Task[]);
+      
+      // Early exit if signed out
+      if (hasSignedOut) return;
 
       // 2. Categories
       const categoriesData = await fetchSafe(api.getCategories());
       if (categoriesData !== ERROR_SYMBOL) setCategories(categoriesData as Category[]);
+      
+      if (hasSignedOut) return;
 
       // 2.1 People
       const peopleData = await fetchSafe(api.getPeople());
       if (peopleData !== ERROR_SYMBOL) setPeople(peopleData as Person[]);
+      
+      if (hasSignedOut) return;
 
       // 3. Hooks & Groups
       const hookGroupsData = await fetchSafe(api.getHookGroups());
       if (hookGroupsData !== ERROR_SYMBOL) setHookGroups(hookGroupsData as HookGroup[]);
       
+      if (hasSignedOut) return;
+      
       const hooksData = await fetchSafe(api.getHooks());
       if (hooksData !== ERROR_SYMBOL) setHooks(hooksData as Hook[]);
+      
+      if (hasSignedOut) return;
 
       // 4. Sprint & History
       const activeSprintData = await fetchSafe(api.getActiveSprint());
       if (activeSprintData !== ERROR_SYMBOL) setActiveSprint(activeSprintData as Sprint | null);
+      
+      if (hasSignedOut) return;
 
       const historyData = await fetchSafe(api.getSprintHistory());
       if (historyData !== ERROR_SYMBOL) setSprintHistory(historyData as Sprint[]);
+      
+      if (hasSignedOut) return;
 
       // 5. Timer
       const timerData = await fetchSafe(api.getTimer());
@@ -466,6 +496,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       title,
       hookId: hookId || null,
       categoryId: categoryId || 'default',
+      goalId: null,
       spentTime: 0,
       isDone: false,
       sprintId: null,
@@ -474,7 +505,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       userId: user?.id || 'temp',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      history: [],
     };
     setTasks((prev) => [tempTask, ...prev]);
     
@@ -754,6 +784,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function updateSprintSettings(settings: { sprintDuration?: number; maxLevels?: number }) {
+    try {
+      await api.updateSprintSettings(settings);
+      await refreshData();
+    } catch (error) {
+      console.error('Update sprint settings error:', error);
+      throw error;
+    }
+  }
+
   const value: AppContextType = {
     user,
     accessToken,
@@ -792,6 +832,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stopTimer,
     startSprint,
     completeSprint,
+    updateSprintSettings,
     viewMode,
     setViewMode,
     selectedHistorySprint,

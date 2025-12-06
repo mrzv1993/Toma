@@ -7,14 +7,19 @@ import { InboxColumn } from './components/InboxColumn';
 import { SprintColumn } from './components/SprintColumn';
 import { TimerColumn } from './components/TimerColumn';
 import { TaskDetailsPanel } from './components/TaskDetailsDialog';
-import { LogOut, Users } from 'lucide-react';
+import { IdeasSection } from './components/IdeasSection';
+import { ServerStatusBanner } from './components/ServerStatusBanner';
+import { LogOut, Users, ListTodo, Lightbulb } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './components/ui/resizable';
 import { ImperativePanelHandle } from "react-resizable-panels";
 import { PeopleManager } from './components/people/PeopleManager';
 
+type Section = 'tasks' | 'ideas';
+
 function AppContent() {
   const { user, isLoading, signOut, selectedTask, setSelectedTask, updateTask } = useApp();
   const [isMobile, setIsMobile] = useState(false);
+  const [currentSection, setCurrentSection] = useState<Section>('tasks');
   const [collapsed, setCollapsed] = useState({
     hooks: false,
     goals: false,
@@ -35,12 +40,6 @@ function AppContent() {
   const inboxRef = useRef<ImperativePanelHandle>(null);
   const sprintRef = useRef<ImperativePanelHandle>(null);
   const timerRef = useRef<ImperativePanelHandle>(null);
-
-  useEffect(() => {
-    if (selectedTask && collapsed.timer) {
-        timerRef.current?.expand();
-    }
-  }, [selectedTask, collapsed.timer]);
 
   // Sync collapsed state with panels
   useEffect(() => {
@@ -104,10 +103,39 @@ function AppContent() {
 
   return (
     <div className="h-screen flex flex-col bg-[var(--color-background)]">
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+      
       {/* Top Bar */}
       <div className="flex items-center justify-between px-6 py-4 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex-shrink-0">
-        <div>
+        <div className="flex items-center gap-6">
           <h1>toma</h1>
+          
+          {/* Navigation Tabs */}
+          <nav className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentSection('tasks')}
+              className={`flex items-center gap-2 px-4 py-2 rounded transition-colors ${
+                currentSection === 'tasks'
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'hover:bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
+              }`}
+            >
+              <ListTodo className="w-4 h-4" />
+              Задачи
+            </button>
+            <button
+              onClick={() => setCurrentSection('ideas')}
+              className={`flex items-center gap-2 px-4 py-2 rounded transition-colors ${
+                currentSection === 'ideas'
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'hover:bg-[var(--color-surface-hover)] text-[var(--color-text-secondary)]'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4" />
+              Записки
+            </button>
+          </nav>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
@@ -124,7 +152,10 @@ function AppContent() {
       </div>
 
       {/* Main Content */}
-      {isMobile ? (
+      {currentSection === 'ideas' ? (
+        <IdeasSection />
+      ) : (
+        isMobile ? (
         <div className="flex-1 overflow-x-auto snap-x snap-mandatory flex h-full w-full bg-[var(--color-background)]">
            <div className="snap-center w-full min-w-0 h-full flex-shrink-0 border-r border-[var(--color-border)]">
              <HooksColumn />
@@ -139,16 +170,15 @@ function AppContent() {
              <SprintColumn />
            </div>
            <div className="snap-center w-full min-w-0 h-full flex-shrink-0 border-r border-[var(--color-border)]">
-              {selectedTask ? (
-                <TaskDetailsPanel 
-                  task={selectedTask}
-                  onUpdate={updateTask}
-                  onClose={() => setSelectedTask(null)}
-                />
-              ) : (
-                <TimerColumn />
-              )}
+             <TimerColumn />
            </div>
+           
+           {/* Task Details Modal */}
+           <TaskDetailsPanel 
+             task={selectedTask}
+             onUpdate={updateTask}
+             onClose={() => setSelectedTask(null)}
+           />
         </div>
       ) : (
       <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
@@ -228,7 +258,7 @@ function AppContent() {
 
         <ResizableHandle />
 
-        {/* Column 5: Timer or Task Details */}
+        {/* Column 5: Timer */}
         <ResizablePanel 
             ref={timerRef}
             defaultSize={15}
@@ -239,21 +269,22 @@ function AppContent() {
             onExpand={() => setCollapsed(prev => ({ ...prev, timer: false }))}
             className={`transition-all duration-300 ease-in-out ${collapsed.timer ? 'min-w-[40px]' : ''}`}
         >
-          {selectedTask ? (
-            <TaskDetailsPanel 
-              task={selectedTask}
-              onUpdate={updateTask}
-              onClose={() => setSelectedTask(null)}
-            />
-          ) : (
-            <TimerColumn 
-              isCollapsed={collapsed.timer} 
-              onToggleCollapse={() => toggleCollapse('timer')}
-            />
-          )}
+          <TimerColumn 
+            isCollapsed={collapsed.timer} 
+            onToggleCollapse={() => toggleCollapse('timer')}
+          />
         </ResizablePanel>
 
       </ResizablePanelGroup>
+      ))}
+      
+      {/* Task Details Modal - Rendered outside columns */}
+      {currentSection === 'tasks' && (
+        <TaskDetailsPanel 
+          task={selectedTask}
+          onUpdate={updateTask}
+          onClose={() => setSelectedTask(null)}
+        />
       )}
     </div>
   );

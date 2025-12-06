@@ -28,6 +28,16 @@ export const SprintRepository = {
     });
   },
 
+  async updateSettings(settings: {
+    sprintDuration?: number;
+    maxLevels?: number;
+  }) {
+    return httpClient.request('/sprint/update-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings)
+    });
+  },
+
   async resetActiveSprintTimes() {
     return httpClient.request('/admin/reset-active-sprint-times', {
         method: 'POST'

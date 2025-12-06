@@ -1,10 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDrag, useDrop } from 'react-dnd';
 import { useApp } from '../context/AppContext';
 import { api } from '../utils/api';
-import { Task, PRIORITY_LEVELS, SPRINT_DURATION_SECONDS } from '../types';
-import { History, GripVertical, CheckSquare, Square, Play, Pause, Lock, RotateCw, BookOpen } from 'lucide-react';
+import { Task, PRIORITY_LEVELS, getSprintDuration } from '../types';
+import { History, GripVertical, CheckSquare, Square, Play, Pause, Lock, RotateCw, BookOpen, Settings } from 'lucide-react';
 import { PersonAvatar } from './people/PersonAvatar';
 import { SprintJournalModal } from './SprintJournalModal';
+import { SprintSettingsDialog } from './SprintSettingsDialog';
 
 const PRIORITY_NAMES: { [key: number]: string } = {
     1: 'Альфа',
@@ -40,6 +42,8 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
     people,
     startSprint,
     setSelectedTask,
+    user,
+    updateSprintSettings,
   } = useApp();
 
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -50,61 +54,94 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
   const [now, setNow] = useState(Date.now());
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [isHistoryJournalOpen, setIsHistoryJournalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const isStoppingSprintRef = useRef(false);
 
   React.useEffect(() => {
-    if (!timer.isRunning) return;
+    if (!timer.isRunning) {
+        isStoppingSprintRef.current = false;
+        return;
+    }
     const interval = setInterval(() => {
+        if (isStoppingSprintRef.current) return;
+
         const currentTime = Date.now();
         setNow(currentTime);
 
-        // Check Max Time Limit
-        if (timer.taskId && timer.startedAt) {
+        let sprintEnded = false;
+
+        // Check Sprint Completion (9 hours)
+        if (activeSprint?.startedAt && timer.startedAt) {
+             const sprintTasks = tasks.filter(t => t.sprintId === activeSprint.id);
+             
+             // Calculate live total
+             // Note: We need to identify if the running task is part of the sprint to add the current session
+             const isRunningTaskInSprint = sprintTasks.some(t => t.id === timer.taskId);
+             
+             const currentSession = Math.floor((currentTime - new Date(timer.startedAt!).getTime()) / 1000);
+             
+             const baseTotal = sprintTasks.reduce((sum, task) => sum + task.spentTime, 0);
+             
+             const liveTotal = isRunningTaskInSprint 
+                ? baseTotal + currentSession 
+                : baseTotal;
+             
+             // Check if we reached or exceeded the limit
+             if (liveTotal >= getSprintDuration(user?.email)) {
+                 sprintEnded = true;
+                 isStoppingSprintRef.current = true;
+                 
+                 // Cap the session time. 
+                 // We subtract a small buffer (e.g., 1s) if we are exactly at the limit to prevent 
+                 // any potential "strictly greater than" backend logic from kicking the task out.
+                 // Safety margin: ensure we don't send a value that causes total > SPRINT_DURATION_SECONDS
+                 const budgetRemaining = Math.max(0, getSprintDuration(user?.email) - baseTotal);
+                 const cappedSession = Math.min(currentSession, budgetRemaining);
+                 
+                 // Use capped session, but verify we are not adding negative time (shouldn't happen with Math.max(0))
+                 const newSpentTime = (timer.elapsedTime || 0) + cappedSession;
+                 
+                 // IMPORTANT: Use pauseTimer instead of stopTimer to NOT complete the task
+                 // The task should just pause, not be marked as done
+                 pauseTimer(newSpentTime)
+                    .then(() => {
+                        setIsJournalOpen(true);
+                    })
+                    .catch((err) => {
+                        console.error("Failed to auto-pause sprint timer:", err);
+                        isStoppingSprintRef.current = false; // Reset on failure so we can try again
+                    });
+                 
+                 // Return early to avoid race conditions with Max Time check
+                 return;
+             }
+        }
+
+        // Check Max Time Limit (Only if sprint didn't just end)
+        if (!sprintEnded && timer.taskId && timer.startedAt) {
             const task = tasks.find(t => t.id === timer.taskId);
             if (task && task.maxAllowedTime) {
                 const elapsed = Math.floor((currentTime - new Date(timer.startedAt).getTime()) / 1000) + (timer.elapsedTime || 0);
                 const maxSeconds = task.maxAllowedTime * 60;
                 
                 if (elapsed >= maxSeconds) {
-                    // Stop timer and complete task
-                    // Update task spent time to exactly match limit
-                    completeTask(task.id).then(() => {
+                    // Stop timer when max time is reached (do NOT complete task)
+                    pauseTimer(maxSeconds).then(() => {
                         updateTask(task.id, { spentTime: maxSeconds });
-                        alert(`Время вышло! Задача "${task.title}" автоматически завершена.`);
+                        alert(`Время вышло! Лимит времени для задачи \"${task.title}\" исчерпан. Таймер остановлен.`);
                     });
                 }
             }
         }
-
-        // Check Sprint Completion (9 hours)
-        if (activeSprint?.startedAt && timer.startedAt) {
-             const sprintTasks = tasks.filter(t => t.sprintId === activeSprint.id);
-             const liveTotal = sprintTasks.reduce((sum, task) => {
-                 if (timer.taskId === task.id) {
-                     const currentSession = Math.floor((currentTime - new Date(timer.startedAt!).getTime()) / 1000);
-                     return sum + task.spentTime + currentSession;
-                 }
-                 return sum + task.spentTime;
-             }, 0);
-             
-             if (liveTotal >= SPRINT_DURATION_SECONDS) {
-                 // Stop timer and open journal
-                 const currentSession = Math.floor((currentTime - new Date(timer.startedAt!).getTime()) / 1000);
-                 const newSpentTime = (timer.elapsedTime || 0) + currentSession;
-                 
-                 stopTimer(newSpentTime).then(() => {
-                     setIsJournalOpen(true);
-                     // alert("Рабочее время спринта (9 часов) истекло. Спринт завершён.");
-                 });
-             }
-        }
     }, 1000);
     return () => clearInterval(interval);
-  }, [timer.isRunning, timer.taskId, timer.startedAt, tasks, completeTask, activeSprint, stopTimer]);
+  }, [timer.isRunning, timer.taskId, timer.startedAt, tasks, completeTask, activeSprint, pauseTimer]);
 
   // Get sprint tasks
   const sprintTasks = tasks.filter((task) => task.sprintId === activeSprint?.id);
   const totalSprintTime = sprintTasks.reduce((sum, task) => sum + task.spentTime, 0);
-  const progress = (totalSprintTime / SPRINT_DURATION_SECONDS) * 100;
+  const sprintDuration = getSprintDuration(user?.email);
+  const progress = (totalSprintTime / sprintDuration) * 100;
 
   // Group tasks by priority level
   const tasksByLevel: { [key: number]: Task[] } = {};
@@ -399,7 +436,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
             // Calculate TRUE sprint elapsed time (sum of all task durations IN THIS SPRINT)
             const sprintTasks = tasks.filter(t => t.sprintId === activeSprint.id);
             const elapsed = sprintTasks.reduce((sum, t) => sum + (t.spentTime || 0), 0); // Only count spentTime
-            const remaining = Math.max(0, SPRINT_DURATION_SECONDS - elapsed);
+            const remaining = Math.max(0, getSprintDuration(user?.email) - elapsed);
             
             const unfinishedTasks = tasks.filter(t => t.sprintId === activeSprint.id && !t.isDone);
             const totalMinTime = unfinishedTasks.reduce((sum, t) => sum + (t.minRequiredTime || 0), 0) * 60;
@@ -670,7 +707,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                         }
                         return sum + task.spentTime;
                     }, 0);
-                    const liveProgress = (liveTotal / SPRINT_DURATION_SECONDS) * 100;
+                    const liveProgress = (liveTotal / getSprintDuration(user?.email)) * 100;
                     return `${formatTime(liveTotal)} (${Math.round(liveProgress)}%)`;
                 })()}
             </span>
@@ -689,7 +726,7 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                   return sum + task.spentTime;
                 }, 0);
                 
-                const width = (levelTime / SPRINT_DURATION_SECONDS) * 100;
+                const width = (levelTime / getSprintDuration(user?.email)) * 100;
                 
                 if (width <= 0) return null;
                 
@@ -778,218 +815,232 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                       </div>
                     ) : (
                       <div className="space-y-1">
-                        {levelTasks.map((task, index) => (
-                          <div
-                            key={task.id}
-                            draggable
-                            onDragStart={() => handleDragStart(task)}
-                            onDragEnd={handleDragEnd}
-                            onDragOver={(e) => handleTaskDragOver(e, task)}
-                            onDrop={(e) => handleTaskDrop(e, task)}
-                            onClick={() => setSelectedTask(task)}
-                            className={`group relative flex items-center gap-2 p-3 md:p-2 rounded cursor-grab active:cursor-grabbing transition-all hover:bg-[var(--color-surface-hover)] ${
-                              draggedTask?.id === task.id ? 'opacity-50' : ''
-                            } ${task.isDone ? 'bg-[var(--color-success)]/5' : ''}`}
-                          >
-                            {dropIndicator?.taskId === task.id && dropIndicator.position === 'top' && (
-                                <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--color-primary)] z-10" />
-                            )}
-                            {dropIndicator?.taskId === task.id && dropIndicator.position === 'bottom' && (
-                                <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-primary)] z-10" />
-                            )}
-
-                            {/* Checkbox */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const isTimeoutCompleted = task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60;
-                                if (isTimeoutCompleted) {
-                                    alert("Задача завершена автоматически по истечении времени и не может быть возобновлена.");
-                                    return;
-                                }
-                                task.isDone ? updateTask(task.id, { isDone: false }) : handleCompleteTask(task.id);
-                              }}
-                              className={`flex-shrink-0 p-1 -m-1 md:p-0 md:m-0 ${task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60 ? 'cursor-not-allowed opacity-50' : ''}`}
+                        {levelTasks.map((task, index) => {
+                          const isMaxTimeLimitReached = !task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60;
+                          
+                          return (
+                            <div
+                              key={task.id}
+                              draggable
+                              onDragStart={() => handleDragStart(task)}
+                              onDragEnd={handleDragEnd}
+                              onDragOver={(e) => handleTaskDragOver(e, task)}
+                              onDrop={(e) => handleTaskDrop(e, task)}
+                              onClick={() => setSelectedTask(task)}
+                              className={`group relative flex items-center gap-2 p-3 md:p-2 rounded cursor-grab active:cursor-grabbing transition-all hover:bg-[var(--color-surface-hover)] ${
+                                draggedTask?.id === task.id ? 'opacity-50' : ''
+                              } ${task.isDone ? 'bg-[var(--color-success)]/5' : ''} ${
+                                isMaxTimeLimitReached ? 'border-2 border-red-500' : 'border border-transparent'
+                              }`}
                             >
-                              {task.isDone ? (
-                                task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60 ? (
-                                    <Lock className="w-5 h-5 text-[var(--color-text-tertiary)]" />
-                                ) : (
-                                    <CheckSquare className="w-5 h-5 text-[var(--color-success)]" />
-                                )
-                              ) : (
-                                <Square className="w-5 h-5 text-[var(--color-text-tertiary)] hover:text-[var(--color-success)]" />
+                              {dropIndicator?.taskId === task.id && dropIndicator.position === 'top' && (
+                                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--color-primary)] z-10" />
                               )}
-                            </button>
-                            
-                            {task.spentTime > 60 && (
-                                <Lock className="w-3 h-3 text-[var(--color-text-tertiary)] flex-shrink-0" />
-                            )}
-                            
-                            <div 
-                              className="flex-1 min-w-0 flex items-center gap-2"
-                            >
-                              {editingTaskId === task.id ? (
-                                  <div className="relative flex-1 min-w-0 grid grid-cols-1">
-                                      <div 
-                                          ref={editBackdropRef}
-                                          className="col-start-1 row-start-1 w-full text-sm whitespace-pre font-normal pointer-events-none overflow-hidden"
-                                          aria-hidden="true"
-                                          style={{ fontFamily: 'inherit' }}
-                                      >
-                                          {editTaskTitle.split(/((?:#|@)[\wа-яА-ЯёЁ]+)/g).map((part, i) => (
-                                              <span key={i} className={part.startsWith('#') ? 'text-blue-400' : part.startsWith('@') ? 'text-green-400' : 'text-[var(--color-text-primary)]'}>
-                                                  {part}
-                                              </span>
-                                          ))}
-                                      </div>
-                                      <input 
-                                          ref={editInputRef}
-                                          autoFocus
-                                          type="text"
-                                          value={editTaskTitle}
-                                          onChange={e => setEditTaskTitle(e.target.value)}
-                                          onScroll={() => {
-                                              if (editBackdropRef.current && editInputRef.current) {
-                                                  editBackdropRef.current.scrollLeft = editInputRef.current.scrollLeft;
-                                              }
-                                          }}
-                                          onBlur={handleSaveEditingTask}
-                                          onKeyDown={e => {
-                                              if(e.key === 'Enter') handleSaveEditingTask();
-                                              if(e.key === 'Escape') setEditingTaskId(null);
-                                          }}
-                                          className="col-start-1 row-start-1 w-full bg-transparent border-none p-0 focus:ring-0 text-sm relative z-10"
-                                          style={{ color: 'transparent', caretColor: 'var(--color-text-primary)' }}
-                                          onClick={e => e.stopPropagation()}
-                                      />
-                                  </div>
-                              ) : (
-                                <p 
-                                  className={`flex-1 min-w-0 truncate ${task.isDone ? 'line-through text-[var(--color-text-tertiary)]' : ''}`}
-                                  style={{ 
-                                    opacity: Math.max(0.08, 1 - (Math.max(0, Math.floor((Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60 * 60 * 24))) * 0.01))
-                                  }}
-                                >
-                                  {task.title}
-                                </p>
-                                )}
-                            
-                            {/* Min/Max Time Inputs or Badges */}
-                            <div 
-                                className="flex items-center gap-2 flex-shrink-0"
-                                onClick={e => e.stopPropagation()}
-                                onDoubleClick={e => e.stopPropagation()}
-                            >
-                                {!activeSprint?.startedAt ? (
-                                    // Preparation Mode: Inputs
-                                    <>
-                                        <div className="flex items-center gap-1" title="Минимальное необходимое время (мин)">
-                                            <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono uppercase">Min</span>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                placeholder="0"
-                                                className="w-14 h-8 md:w-10 md:h-5 text-sm md:text-xs px-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-center focus:border-[var(--color-primary)] focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                value={task.minRequiredTime || ''}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value);
-                                                    updateTask(task.id, { minRequiredTime: isNaN(val) || val === 0 ? null : val });
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1" title="Максимальное допустимое время (мин)">
-                                            <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono uppercase">Max</span>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                placeholder="∞"
-                                                className="w-14 h-8 md:w-10 md:h-5 text-sm md:text-xs px-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-center focus:border-[var(--color-primary)] focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                value={task.maxAllowedTime || ''}
-                                                onChange={(e) => {
-                                                    const val = parseInt(e.target.value);
-                                                    updateTask(task.id, { maxAllowedTime: isNaN(val) || val <= 0 ? null : val });
-                                                }}
-                                            />
-                                        </div>
-                                    </>
-                                ) : (
-                                    // Active/History Mode: Badges
-                                    <>
-                                        {task.minRequiredTime && (
-                                            <span className="text-xs md:text-[10px] px-2 py-1 md:px-1.5 md:py-0.5 bg-blue-500/10 text-blue-500 rounded font-medium" title="Минимальное время">
-                                                Min: {task.minRequiredTime}м
-                                            </span>
-                                        )}
-                                        {task.maxAllowedTime && (
-                                            <span className="text-xs md:text-[10px] px-2 py-1 md:px-1.5 md:py-0.5 bg-red-500/10 text-red-500 rounded font-medium" title="Максимальное время">
-                                                Max: {task.maxAllowedTime}м
-                                            </span>
-                                        )}
-                                    </>
-                                )}
-                            </div>
-                            </div>
+                              {dropIndicator?.taskId === task.id && dropIndicator.position === 'bottom' && (
+                                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-primary)] z-10" />
+                              )}
 
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                                {/* People */}
-                                <div className="flex items-center">
-                                    <div className="flex -space-x-1.5 hover:space-x-0.5 transition-all mr-1">
-                                        {(task.assignedPeopleIds || [])
-                                            .map(id => people.find(p => p.id === id))
-                                            .filter(Boolean)
-                                            .slice(0, 3)
-                                            .map((person) => (
-                                                <PersonAvatar 
-                                                    key={person!.id} 
-                                                    person={person!} 
-                                                    size="sm" 
-                                                    className="w-5 h-5 border border-[var(--color-background)]" 
-                                                />
-                                            ))
-                                        }
-                                        {(task.assignedPeopleIds?.length || 0) > 3 && (
-                                            <div className="w-5 h-5 rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-background)] flex items-center justify-center text-[9px] text-[var(--color-text-secondary)]">
-                                                +{(task.assignedPeopleIds?.length || 0) - 3}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {!task.isDone && activeSprint?.startedAt && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleToggleTimer(e, task);
-                                        }}
-                                        className={`p-2 md:p-1 rounded hover:bg-[var(--color-surface-hover)] transition-all ${
-                                            timer.taskId === task.id && timer.isRunning 
-                                                ? 'opacity-100 text-[var(--color-primary)]' 
-                                                : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 text-[var(--color-text-secondary)]'
-                                        }`}
-                                        title={timer.taskId === task.id && timer.isRunning ? "Пауза" : "Запустить таймер"}
-                                    >
-                                        {timer.taskId === task.id && timer.isRunning ? (
-                                            <Pause className="w-4 h-4 fill-current" />
-                                        ) : (
-                                            <Play className="w-4 h-4 fill-current" />
-                                        )}
-                                    </button>
-                                )}
-                                {(() => {
-                                  const isRunning = timer.taskId === task.id && timer.isRunning;
-                                  const hasTime = (task.spentTime || 0) > 0 || isRunning;
-                                  
-                                  if (!hasTime) {
-                                    return null;
+                              {/* Checkbox */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const isTimeoutCompleted = task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60;
+                                  if (isTimeoutCompleted) {
+                                      alert("адача завершена автоматически по истечении времени и не мжет быть возобновлена.");
+                                      return;
                                   }
+                                  task.isDone ? updateTask(task.id, { isDone: false }) : handleCompleteTask(task.id);
+                                }}
+                                className={`flex-shrink-0 p-1 -m-1 md:p-0 md:m-0 ${task.isDone && task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60 ? 'cursor-not-allowed opacity-50' : ''}`}
+                              >
+                                {task.isDone ? (
+                                  task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60 ? (
+                                      <Lock className="w-5 h-5 text-[var(--color-text-tertiary)]" />
+                                  ) : (
+                                      <CheckSquare className="w-5 h-5 text-[var(--color-success)]" />
+                                  )
+                                ) : (
+                                  <Square className="w-5 h-5 text-[var(--color-text-tertiary)] hover:text-[var(--color-success)]" />
+                                )}
+                              </button>
+                              
+                              {task.spentTime > 60 && (
+                                  <Lock className="w-3 h-3 text-[var(--color-text-tertiary)] flex-shrink-0" />
+                              )}
+                              
+                              <div 
+                                className="flex-1 min-w-0 flex items-center gap-2"
+                              >
+                                {editingTaskId === task.id ? (
+                                    <div className="relative flex-1 min-w-0 grid grid-cols-1">
+                                        <div 
+                                            ref={editBackdropRef}
+                                            className="col-start-1 row-start-1 w-full text-sm whitespace-pre font-normal pointer-events-none overflow-hidden"
+                                            aria-hidden="true"
+                                            style={{ fontFamily: 'inherit' }}
+                                        >
+                                            {editTaskTitle.split(/((?:#|@)[\wа-яА-ЯёЁ]+)/g).map((part, i) => (
+                                                <span key={i} className={part.startsWith('#') ? 'text-blue-400' : part.startsWith('@') ? 'text-green-400' : 'text-[var(--color-text-primary)]'}>
+                                                    {part}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input 
+                                            ref={editInputRef}
+                                            autoFocus
+                                            type="text"
+                                            value={editTaskTitle}
+                                            onChange={e => setEditTaskTitle(e.target.value)}
+                                            onScroll={() => {
+                                                if (editBackdropRef.current && editInputRef.current) {
+                                                    editBackdropRef.current.scrollLeft = editInputRef.current.scrollLeft;
+                                                }
+                                            }}
+                                            onBlur={handleSaveEditingTask}
+                                            onKeyDown={e => {
+                                                if(e.key === 'Enter') handleSaveEditingTask();
+                                                if(e.key === 'Escape') setEditingTaskId(null);
+                                            }}
+                                            className="col-start-1 row-start-1 w-full bg-transparent border-none p-0 focus:ring-0 text-sm relative z-10"
+                                            style={{ color: 'transparent', caretColor: 'var(--color-text-primary)' }}
+                                            onClick={e => e.stopPropagation()}
+                                        />
+                                    </div>
+                                ) : (
+                                  <p 
+                                    className={`flex-1 min-w-0 truncate ${task.isDone ? 'line-through text-[var(--color-text-tertiary)]' : ''}`}
+                                    style={{ 
+                                      opacity: Math.max(0.08, 1 - (Math.max(0, Math.floor((Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60 * 60 * 24))) * 0.01))
+                                    }}
+                                  >
+                                    {task.title}
+                                  </p>
+                                  )}
+                              
+                              {/* Min/Max Time Inputs or Badges */}
+                              <div 
+                                  className="flex items-center gap-2 flex-shrink-0"
+                                  onClick={e => e.stopPropagation()}
+                                  onDoubleClick={e => e.stopPropagation()}
+                              >
+                                  {!activeSprint?.startedAt ? (
+                                      // Preparation Mode: Inputs
+                                      <>
+                                          <div className="flex items-center gap-1" title="Минимальное необходимое время (мин)">
+                                              <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono uppercase">Min</span>
+                                              <input
+                                                  type="number"
+                                                  min="0"
+                                                  placeholder="0"
+                                                  className="w-14 h-8 md:w-10 md:h-5 text-sm md:text-xs px-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-center focus:border-[var(--color-primary)] focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                  value={task.minRequiredTime || ''}
+                                                  onChange={(e) => {
+                                                      const val = parseInt(e.target.value);
+                                                      updateTask(task.id, { minRequiredTime: isNaN(val) || val === 0 ? null : val });
+                                                  }}
+                                              />
+                                          </div>
+                                          <div className="flex items-center gap-1" title="Максимальное допустимое время (мин)">
+                                              <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono uppercase">Max</span>
+                                              <input
+                                                  type="number"
+                                                  min="0"
+                                                  placeholder="∞"
+                                                  className="w-14 h-8 md:w-10 md:h-5 text-sm md:text-xs px-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-center focus:border-[var(--color-primary)] focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                  value={task.maxAllowedTime || ''}
+                                                  onChange={(e) => {
+                                                      const val = parseInt(e.target.value);
+                                                      updateTask(task.id, { maxAllowedTime: isNaN(val) || val <= 0 ? null : val });
+                                                  }}
+                                              />
+                                          </div>
+                                      </>
+                                  ) : (
+                                      // Active/History Mode: Badges
+                                      <>
+                                          {task.minRequiredTime && (
+                                              <span className="text-xs md:text-[10px] px-2 py-1 md:px-1.5 md:py-0.5 bg-blue-500/10 text-blue-500 rounded font-medium" title="Минимальное время">
+                                                  Min: {task.minRequiredTime}м
+                                              </span>
+                                          )}
+                                          {task.maxAllowedTime && (
+                                              <span className="text-xs md:text-[10px] px-2 py-1 md:px-1.5 md:py-0.5 bg-red-500/10 text-red-500 rounded font-medium" title="Максимальное время">
+                                                  Max: {task.maxAllowedTime}м
+                                              </span>
+                                          )}
+                                      </>
+                                  )}
+                              </div>
+                              </div>
 
-                                  return (
-                                    <small className={`font-mono whitespace-nowrap ${
-                                        isRunning
-                                            ? 'text-[var(--color-primary)] font-bold' 
-                                            : 'text-[var(--color-text-tertiary)]'
-                                    }`}>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* People */}
+                                  <div className="flex items-center">
+                                      <div className="flex -space-x-1.5 hover:space-x-0.5 transition-all mr-1">
+                                          {(task.assignedPeopleIds || [])
+                                              .map(id => people.find(p => p.id === id))
+                                              .filter(Boolean)
+                                              .slice(0, 3)
+                                              .map((person) => (
+                                                  <PersonAvatar 
+                                                      key={person!.id} 
+                                                      person={person!} 
+                                                      size="sm" 
+                                                      className="w-5 h-5 border border-[var(--color-background)]" 
+                                                  />
+                                              ))
+                                          }
+                                          {(task.assignedPeopleIds?.length || 0) > 3 && (
+                                              <div className="w-5 h-5 rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-background)] flex items-center justify-center text-[9px] text-[var(--color-text-secondary)]">
+                                                  +{(task.assignedPeopleIds?.length || 0) - 3}
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {!task.isDone && activeSprint?.startedAt && (
+                                      <button
+                                          onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleToggleTimer(e, task);
+                                          }}
+                                          disabled={task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60}
+                                          className={`p-2 md:p-1 rounded transition-all ${
+                                              task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60
+                                                  ? 'cursor-not-allowed opacity-50 text-red-500' 
+                                                  : timer.taskId === task.id && timer.isRunning 
+                                                      ? 'opacity-100 text-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]' 
+                                                      : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]'
+                                          }`}
+                                          title={
+                                              task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60
+                                                  ? "Лимит времени исчерпан"
+                                                  : timer.taskId === task.id && timer.isRunning ? "Пауза" : "Запустить таймер"
+                                          }
+                                      >
+                                          {task.maxAllowedTime && task.spentTime >= task.maxAllowedTime * 60 ? (
+                                              <Lock className="w-4 h-4" />
+                                          ) : timer.taskId === task.id && timer.isRunning ? (
+                                              <Pause className="w-4 h-4 fill-current" />
+                                          ) : (
+                                              <Play className="w-4 h-4 fill-current" />
+                                          )}
+                                      </button>
+                                  )}
+                                  {(() => {
+                                    const isRunning = timer.taskId === task.id && timer.isRunning;
+                                    const hasTime = (task.spentTime || 0) > 0 || isRunning;
+                                    
+                                    if (!hasTime) {
+                                      return null;
+                                    }
+
+                                    return (
+                                      <small className={`font-mono whitespace-nowrap ${
+                                          isRunning
+                                              ? 'text-[var(--color-primary)] font-bold' 
+                                              : 'text-[var(--color-text-tertiary)]'
+                                      }`}>
                                         {(() => {
                                             const totalSeconds = (isRunning && timer.startedAt
                                                 ? Math.floor((now - new Date(timer.startedAt).getTime()) / 1000) + (timer.elapsedTime || 0)
@@ -999,12 +1050,13 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
                                             const s = totalSeconds % 60;
                                             return h > 0 ? `${h}ч ${m}м ${s}с` : `${m}м ${s}с`;
                                         })()}
-                                    </small>
-                                  );
-                                })()}
+                                      </small>
+                                    );
+                                  })()}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1023,7 +1075,23 @@ export function SprintColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: 
              <History className="w-4 h-4" />
              <span>История спринтов</span>
           </button>
+          <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex-1 flex items-center justify-center gap-2 p-3 md:p-2 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)] rounded transition-colors"
+          >
+              <Settings className="w-4 h-4" />
+              <span>Настройки спринта</span>
+          </button>
       </div>
+
+      {isSettingsOpen && (
+          <SprintSettingsDialog
+              isOpen={isSettingsOpen}
+              onClose={() => setIsSettingsOpen(false)}
+              activeSprint={activeSprint}
+              onSave={updateSprintSettings}
+          />
+      )}
     </div>
   );
 }

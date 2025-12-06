@@ -42,6 +42,7 @@ export interface Task {
   title: string;
   hookId: string | null;
   categoryId: string | null;
+  goalId: string | null; // ID целевой задачи из категории 'goal'
   spentTime: number; // in seconds
   isDone: boolean;
   sprintId: string | null;
@@ -112,6 +113,8 @@ export interface Sprint {
   startedAt?: string | null; // Preparation mode if null
   tasks: Task[]; // Changed from SprintTask[] to Task[] because in server/index.tsx we attach actual Task objects
   journal?: SprintJournal;
+  sprintDuration?: number; // Duration in hours (1-24), defaults to 9
+  maxLevels?: number; // Maximum levels (1-9), defaults to 9
 }
 
 export interface SprintTask {
@@ -147,6 +150,13 @@ export const PRIORITY_LEVELS = {
 } as const;
 
 export const SPRINT_DURATION_SECONDS = 9 * 60 * 60; // 9 hours in seconds
+export const SPRINT_DURATION_DEMO = 10 * 60; // 10 minutes for demo mode
+
+// Helper function to get sprint duration based on user email
+export function getSprintDuration(userEmail?: string): number {
+  const isDemoUser = userEmail === 'demo@example.com';
+  return isDemoUser ? SPRINT_DURATION_DEMO : SPRINT_DURATION_SECONDS;
+}
 
 // API Response Types
 export interface ApiResponse<T> {

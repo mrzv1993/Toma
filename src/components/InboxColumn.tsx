@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Plus, Inbox, Trash2, Check, Calendar as CalendarIcon, Clock, RefreshCw } from 'lucide-react';
+import { Plus, Inbox, Trash2, Check, Calendar as CalendarIcon, Clock, RefreshCw, Target } from 'lucide-react';
 import { Task, RecurrenceSettings } from '../types';
 import { PersonAvatar } from './people/PersonAvatar';
 import { TaskRecurrenceDialog } from './TaskRecurrenceDialog';
@@ -25,6 +25,7 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
     setDraggedTask,
     hooks,
     activeSprint,
+    setSelectedTask,
   } = useApp();
   const [newCategoryTitle, setNewCategoryTitle] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<'standard' | 'event'>('standard');
@@ -463,6 +464,8 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                       <div>
                         {categoryTasks.map((task) => {
                           const hook = hooks.find(h => h.id === task.hookId);
+                          const goalTask = task.goalId ? tasks.find(t => t.id === task.goalId) : null;
+                          const goalCategory = goalTask?.categoryId ? categories.find(c => c.id === goalTask.categoryId) : null;
                           return (
                             <div
                               key={task.id}
@@ -471,6 +474,7 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                               onDragEnd={handleDragEnd}
                               onDragOver={(e) => handleTaskDragOver(e, task)}
                               onDrop={(e) => handleTaskDrop(e, task)}
+                              onClick={() => setSelectedTask(task)}
                               className={`group relative flex items-center gap-3 p-3 border-b border-[var(--color-border)] last:border-b-0 hover:bg-[var(--color-surface-hover)] cursor-grab active:cursor-grabbing transition-all ${
                                 draggedTask?.id === task.id ? 'opacity-50' : ''
                               }`}
@@ -571,6 +575,14 @@ export function InboxColumn({ isCollapsed, onToggleCollapse }: { isCollapsed?: b
                               </div>
 
                               <div className="flex items-center gap-3 text-xs text-[var(--color-text-tertiary)] flex-shrink-0">
+                                {goalTask && goalCategory && (
+                                    <span 
+                                      className="px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/30 flex items-center gap-1"
+                                      title={`Цель: ${goalTask.title}`}
+                                    >
+                                        <Target className="w-3 h-3" />
+                                    </span>
+                                )}
                                 {hook && (
                                     <span className="px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                                         #{hook.title}

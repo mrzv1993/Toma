@@ -9,10 +9,15 @@ import { TimerRepository } from '../repositories/TimerRepository';
 import { SprintRepository } from '../repositories/SprintRepository';
 import { TelegramRepository } from '../repositories/TelegramRepository';
 import { TimeEntryRepository } from '../repositories/TimeEntryRepository';
+import { IdeaRepository } from '../repositories/IdeaRepository';
 
 class ApiFacade {
   setAccessToken(token: string | null) {
     httpClient.setAccessToken(token);
+  }
+
+  hasAccessToken(): boolean {
+    return httpClient.hasAccessToken();
   }
 
   // Auth
@@ -64,7 +69,14 @@ class ApiFacade {
   getSprintHistory = SprintRepository.getHistory;
   startSprint = SprintRepository.start;
   completeSprint = SprintRepository.complete;
+  updateSprintSettings = SprintRepository.updateSettings;
   resetActiveSprintTimes = SprintRepository.resetActiveSprintTimes;
+
+  // Ideas
+  getIdeas = IdeaRepository.getAll;
+  createIdea = IdeaRepository.create;
+  updateIdea = IdeaRepository.update;
+  deleteIdea = IdeaRepository.delete;
 
   // Telegram
   setupTelegramWebhook = TelegramRepository.setupWebhook;

@@ -37,7 +37,7 @@ export function GoalRelationsDialog({ task, onClose }: GoalRelationsDialogProps)
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-       <DialogContent className="sm:max-w-[425px] bg-[var(--color-background)] border-[var(--color-border)]">
+       <DialogContent className="sm:max-w-md md:max-w-lg min-w-[360px] bg-[var(--color-background)] border-[var(--color-border)]">
          <DialogHeader>
            <DialogTitle className="flex items-center gap-2 text-[var(--color-text-primary)]">
              <Link className="w-5 h-5" />

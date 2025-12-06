@@ -18,6 +18,7 @@ const GOAL_TYPES = [
 
 export function GoalsColumn({ isCollapsed, onToggleCollapse }: GoalsColumnProps) {
   const { 
+    user,
     categories, 
     tasks, 
     createCategory, 
@@ -46,7 +47,8 @@ export function GoalsColumn({ isCollapsed, onToggleCollapse }: GoalsColumnProps)
 
   useEffect(() => {
     async function initializeGoalCategories() {
-        if (missingCategories.length === 0 || isInitializing) return;
+        // Don't initialize if user is not logged in yet
+        if (!user || missingCategories.length === 0 || isInitializing) return;
         setIsInitializing(true);
         try {
             for (const goal of missingCategories) {
@@ -60,7 +62,7 @@ export function GoalsColumn({ isCollapsed, onToggleCollapse }: GoalsColumnProps)
     }
 
     initializeGoalCategories();
-  }, [missingCategories.length, isInitializing, createCategory]); // Added dependencies for correctness
+  }, [user, missingCategories.length, isInitializing, createCategory]); // Added dependencies for correctness
 
   const handleAddTask = async (categoryId: string, key: string) => {
     const title = newTaskTitles[key];

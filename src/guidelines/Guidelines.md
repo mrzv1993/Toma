@@ -147,6 +147,71 @@ interface TaskDTO {
 - ScrollArea
 - Separator
 
+## 9.4. Модальные окна и диалоги (КРИТИЧНО!)
+
+### 9.4.1. Ширина модальных окон
+Всегда используй адекватные размеры для модальных окон:
+- **Маленькие диалоги** (подтверждения, простые формы): `max-w-md` (448px)
+- **Средние диалоги** (формы с несколькими полями): `max-w-lg` (512px) или `max-w-xl` (576px)
+- **Большие диалоги** (списки, таблицы, комплексные формы): `max-w-2xl` (672px) или `max-w-3xl` (768px)
+- **Очень большие диалоги** (редакторы, детальные просмотры): `max-w-4xl` (896px) или `max-w-5xl` (1024px)
+
+**ЗАПРЕЩЕНО:**
+- Использовать слишком узкие окна, где кнопки не помещаются
+- Игнорировать содержимое при выборе ширины
+- Использовать фиксированную ширину без `max-w-*`
+
+### 9.4.2. Структура модального окна
+Обязательная структура:
+```tsx
+<Dialog/AlertDialog open={isOpen} onOpenChange={handleOpenChange}>
+  <DialogContent className="max-w-[размер] bg-[var(--color-surface)] border-[var(--color-border)]">
+    <DialogHeader>
+      <DialogTitle className="text-[var(--color-text-primary)]">
+        Заголовок
+      </DialogTitle>
+      <DialogDescription className="text-[var(--color-text-secondary)]">
+        Описание
+      </DialogDescription>
+    </DialogHeader>
+    
+    {/* Основной контент с ScrollArea если нужно */}
+    <div className="space-y-4">
+      {/* Контент */}
+    </div>
+    
+    <DialogFooter>
+      <Button variant="outline">Отмена</Button>
+      <Button>Действие</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+### 9.4.3. Прокрутка в модальных окнах
+- Если контент может быть длинным — используй `<ScrollArea className="max-h-[400px]">` 
+- Всегда добавляй `pr-4` к контенту внутри ScrollArea для отступа от скроллбара
+- Заголовок и футер должны быть зафиксированы (не скроллиться)
+
+### 9.4.4. Цвета и стили
+Всегда используй CSS-переменные для модальных окон:
+- Фон: `bg-[var(--color-surface)]`
+- Бордер: `border-[var(--color-border)]`
+- Заголовок: `text-[var(--color-text-primary)]`
+- Описание: `text-[var(--color-text-secondary)]`
+- Ховер: `hover:bg-[var(--color-surface-hover)]`
+
+### 9.4.5. Кнопки в футере
+- Кнопка отмены: `variant="outline"` или стили вручную с `bg-[var(--color-surface-hover)]`
+- Основная кнопка: `bg-[var(--color-primary)]` с `hover:bg-[var(--color-primary-hover)]`
+- Деструктивная кнопка: `bg-red-500` с `hover:bg-red-600`
+- Всегда добавляй `disabled` состояние при загрузке
+
+### 9.4.6. Адаптивность
+- Модальные окна должны корректно работать на мобильных устройствах
+- На маленьких экранах: `max-w-[calc(100vw-2rem)]` для отступов по бокам
+- Используй `sm:max-w-lg md:max-w-2xl` для адаптивной ширины
+
 ---
 
 # 10. Правила написания кода
